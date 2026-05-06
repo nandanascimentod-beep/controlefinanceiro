@@ -140,7 +140,7 @@ export default function App() {
 
   const handleAdd = async () => {
     if (!form.data || !form.valor) {
-      showToast('Preencha os campos obrigat\u00f3rios', 'error');
+      showToast('Preencha os campos obrigatórios', 'error');
       return;
     }
     const qtd = Math.max(1, parseInt(form.parcelas) || 1);
@@ -266,7 +266,7 @@ export default function App() {
       showToast('Erro ao excluir', 'error');
       return;
     }
-    showToast('Exclu\u00eddo!');
+    showToast('Excluído!');
     setEditando(null);
     fetchData();
   };
@@ -415,7 +415,7 @@ export default function App() {
               ))}
             </select>
 
-            <label style={S.label}>Descri\u00e7\u00e3o</label>
+            <label style={S.label}>Descrição</label>
             <input
               type="text"
               style={S.input}
@@ -468,7 +468,7 @@ export default function App() {
                   )}
                 </div>
                 <span style={{ color: C.muted, fontSize: 13 }}>
-                  Aplicar \u00e0s {getProximasParcelas(editando).length}{' '}
+                  Aplicar para {getProximasParcelas(editando).length}{' '}
                   próximas parcelas também
                 </span>
               </div>
@@ -708,7 +708,7 @@ export default function App() {
                                 >
                                   {t.metodo_pagamento === 'Boleto'
                                     ? 'Boleto'
-                                    : 'Cart\u00e3o'}
+                                    : 'Cartão'}
                                 </span>
                               </p>
                             </div>
@@ -789,7 +789,7 @@ export default function App() {
                   </p>
                 </div>
                 {proximosBoletos.length === 0 ? (
-                  <EmptyState msg="Nenhum boleto pendente nos pr\u00f3ximos 3 meses." />
+                  <EmptyState msg="Nenhum boleto pendente nos próximos 3 meses." />
                 ) : (
                   (() => {
                     const porMes = {};
