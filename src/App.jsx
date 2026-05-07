@@ -214,14 +214,15 @@ export default function App() {
           x.descricao === t.descricao &&
           x.categoria === t.categoria &&
           x.total_parcelas === t.total_parcelas &&
-          x.metodo_pagamento === t.metodo_pagamento
+          x.metodo_pagamento === t.metodo_pagamento &&
+          Number(x.valor) === Number(t.valor)
       )
       .sort((a, b) => a.numero_parcela - b.numero_parcela);
   };
 
   const getProximasParcelas = (t) => {
-    if (!t.parcelado) return [];
-    return getGrupo(t).filter((x) => x.numero_parcela > t.numero_parcela);
+  if (!t.parcelado) return [];
+  return getGrupo(t).filter((x) => x.numero_parcela !== t.numero_parcela);
   };
 
   const handleSaveEdit = async () => {
@@ -463,7 +464,7 @@ export default function App() {
                     <span
                       style={{ color: C.bg, fontSize: 12, fontWeight: 800 }}
                     >
-                      \u2713
+                      ✓
                     </span>
                   )}
                 </div>
@@ -731,7 +732,7 @@ export default function App() {
                         </div>
                         {isOpen && proximas.length > 0 && (
                           <div style={S.parcelasWrap}>
-                            <p style={S.parcelasTitle}>Próximas parcelas</p>
+                            <p style={S.parcelasTitle}>Parcelas</p>
                             {proximas.map((p) => (
                               <div
                                 key={p.id}
@@ -747,8 +748,8 @@ export default function App() {
                                   }}
                                 >
                                   {p.numero_parcela}/{p.total_parcelas}
-                                  &nbsp;&nbsp;{p.data}
-                                  {p.pago ? ' \u2713' : ''}
+                                  &nbsp;&nbsp;{p.data} ({p.mes_referente})
+                                  {p.pago ? ' ✓' : ''}
                                 </span>
                                 <span
                                   style={{
@@ -848,7 +849,7 @@ export default function App() {
                                     {CAT_ICONS[cat]} {cat}
                                   </span>
                                   <span
-                                    style={{ color: C.muted, fontSize: 13 }}
+                                    style={{ color: C.success, fontSize: 13 }}
                                   >
                                     {fmt(totalCat)}
                                   </span>
@@ -877,8 +878,8 @@ export default function App() {
                                     </div>
                                     <span
                                       style={{
-                                        color: C.warning,
-                                        fontWeight: 600,
+                                        color: C.muted,
+                                        fontSize: 13,
                                       }}
                                     >
                                       {fmt(t.valor)}
@@ -1166,12 +1167,14 @@ export default function App() {
                     placeholder="1"
                     style={S.input}
                     value={form.parcelas}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        parcelas: Math.max(1, parseInt(e.target.value) || 1),
-                      })
-                    }
+                    onChange={(e) => {
+  const valor = e.target.value;
+
+  setForm({
+    ...form,
+    parcelas: valor === '' ? '' : Math.max(1, parseInt(valor) || 1),
+  });
+}}
                   />
                   {Number(form.valor) > 0 && Number(form.parcelas) > 1 && (
                     <p style={S.parcelaInfo}>
