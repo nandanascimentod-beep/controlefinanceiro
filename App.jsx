@@ -128,7 +128,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('transacoes')
       .select('*')
-      .order('data', { ascending: false });
+      .order('descricao', { ascending: true });
     if (error) showToast('Erro ao buscar dados', 'error');
     else setTransactions(data || []);
     setLoading(false);
@@ -338,7 +338,7 @@ export default function App() {
 
   const itensCartao = filtradas
     .filter((t) => t.metodo_pagamento === 'Cartão de Crédito')
-    .sort((a, b) => b.data.localeCompare(a.data));
+    .sort((a, b) => (a.descricao || '').localeCompare(b.descricao || '', 'pt-BR'));
   const totalFatura = itensCartao.reduce((a, b) => a + Number(b.valor || 0), 0);
   const totalConferido = itensCartao
     .filter((t) => t.pago)
