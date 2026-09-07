@@ -670,6 +670,8 @@ export default function App() {
       periodo: p,
       itens,
       total: itens.reduce((a, b) => a + Number(b.valor || 0), 0),
+      totalCartao: itensCartao.reduce((a, b) => a + Number(b.valor || 0), 0),
+      totalOutros: itensOutros.reduce((a, b) => a + Number(b.valor || 0), 0),
       porCategoria: CATEGORIAS.map((cat) => ({
         nome: cat,
         valor: itens
@@ -1013,6 +1015,18 @@ export default function App() {
                           <p style={{ fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
                             {p.itens.length} lançamento{p.itens.length !== 1 ? 's' : ''}
                           </p>
+                          {p.periodo === '1º Período' && (p.totalCartao > 0 || p.totalOutros > 0) && (
+                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted }}>
+                                <span>💳 Cartão</span>
+                                <span style={{ fontWeight: 700, color: C.text }}>{fmt(p.totalCartao)}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.muted, marginTop: 2 }}>
+                                <span>📦 Outros</span>
+                                <span style={{ fontWeight: 700, color: C.text }}>{fmt(p.totalOutros)}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1023,6 +1037,31 @@ export default function App() {
                           <div key={p.periodo} style={S.card}>
                             <p style={{ ...S.cardTitle, textAlign: 'center' }}>{p.periodo}</p>
                             <p style={{ ...S.donutTotal, color: PERIODO_COLORS[p.periodo] }}>{fmt(p.total)}</p>
+                            {p.periodo === '1º Período' && (p.totalCartao > 0 || p.totalOutros > 0) && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'center',
+                                  gap: 24,
+                                  marginTop: -10,
+                                  marginBottom: 18,
+                                }}
+                              >
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ margin: 0, fontSize: 11, color: C.muted }}>💳 Cartão</p>
+                                  <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 800, color: C.text }}>
+                                    {fmt(p.totalCartao)}
+                                  </p>
+                                </div>
+                                <div style={{ width: 1, background: C.border }} />
+                                <div style={{ textAlign: 'center' }}>
+                                  <p style={{ margin: 0, fontSize: 11, color: C.muted }}>📦 Outros</p>
+                                  <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 800, color: C.text }}>
+                                    {fmt(p.totalOutros)}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                             <DonutChart
                               dados={p.porCategoria.map((c) => ({ valor: c.valor, cor: CAT_COLORS[c.nome] || '#98A2B3' }))}
                               total={p.total}
