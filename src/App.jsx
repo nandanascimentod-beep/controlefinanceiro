@@ -662,7 +662,10 @@ export default function App() {
   const totalGeral = totalOutros + totalCartao;
 
   const porPeriodo = PERIODOS.map((p) => {
-    const itens = outrosDoMes.filter((t) => t.periodo === p);
+    // o cartão (Fernanda) é sempre somado dentro do 1º Período
+    const itensOutros = outrosDoMes.filter((t) => t.periodo === p);
+    const itensCartao = p === '1º Período' ? cartaoDoMes : [];
+    const itens = [...itensOutros, ...itensCartao];
     return {
       periodo: p,
       itens,
@@ -980,7 +983,7 @@ export default function App() {
                       </p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '0 0 4px' }}>Cartão (Fernanda)</p>
+                      <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '0 0 4px' }}>Cartão (no 1º Período)</p>
                       <p style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0 }}>{fmt(totalCartao)}</p>
                       <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '4px 0 0' }}>
                         Outros: {fmt(totalOutros)}
