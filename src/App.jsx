@@ -15,6 +15,13 @@ import { supabase } from './supabase';
         alter table transacoes add column periodo text;
       O campo metodo_pagamento passa a aceitar também o valor "Outros"
       (além de "Cartão de Crédito" e "Boleto" que já existiam).
+
+   ⚠️ NOVO — controle de pagamento ("já paguei essa conta?"):
+      Precisa existir a coluna "pago" (boolean, aceita null, default false)
+      em AMBAS as tabelas: "transacoes" e "cartao_compartilhado".
+      Se ainda não existir, rode no Supabase:
+        alter table transacoes add column pago boolean default false;
+        alter table cartao_compartilhado add column pago boolean default false;
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ─── CATEGORIAS (copiadas do app "Cartão da Família") ─────────────────── */
@@ -221,6 +228,18 @@ const S = {
     alignItems: 'center',
     boxShadow: `0 10px 24px ${C.accent}33`,
   },
+  pagamentoRow2: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: 10,
+    marginBottom: 14,
+  },
+  pagamentoCard: {
+    borderRadius: 14,
+    padding: '14px 14px',
+    border: `1px solid ${C.border}`,
+    boxShadow: C.shadowSm,
+  },
   periodoRow3: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -285,6 +304,20 @@ const S = {
     fontSize: 15,
     cursor: 'pointer',
     padding: '0 2px',
+    flexShrink: 0,
+  },
+  pagoBtn: {
+    background: 'none',
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 7,
+    width: 24,
+    height: 24,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    cursor: 'pointer',
+    padding: 0,
     flexShrink: 0,
   },
   badge: {
@@ -491,9 +524,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [togglingPagoId, setTogglingPagoId] = useState(null);
 
   const [filtroCategoria, setFiltroCategoria] = useState('');
   const [filtroFonte, setFiltroFonte] = useState(''); // '', 'outros', 'cartao'
+  const [filtroPago, setFiltroPago] = useState(''); // '', 'pago', 'pendente'
   const [filtroDataInicio, setFiltroDataInicio] = useState('');
   const [filtroDataFim, setFiltroDataFim] = useState('');
 
@@ -560,7 +595,7 @@ export default function App() {
         metodo_pagamento: 'Outros',
         periodo: form.periodo,
         mes_referente: d.toISOString().slice(0, 7),
-        pago: null,
+        pago: false,
       });
     }
     const { error } = await supabase.from('transacoes').insert(novas);
@@ -573,6 +608,27 @@ export default function App() {
     setForm(FORM_VAZIO);
     fetchData();
     setTab('listagem');
+  };
+
+  /* ── Marcar/desmarcar como pago (atualiza direto no Supabase e no estado local) ── */
+  const togglePago = async (t, e) => {
+    e?.stopPropagation();
+    const chave = `${t._origem}-${t.id}`;
+    setTogglingPagoId(chave);
+    const novoValor = !t.pago;
+    const tabela = t._origem === 'cartao' ? 'cartao_compartilhado' : 'transacoes';
+    const { error } = await supabase.from(tabela).update({ pago: novoValor }).eq('id', t.id);
+    setTogglingPagoId(null);
+    if (error) {
+      showToast('Erro ao atualizar pagamento', 'error');
+      return;
+    }
+    if (t._origem === 'cartao') {
+      setCartao((prev) => prev.map((x) => (x.id === t.id ? { ...x, pago: novoValor } : x)));
+    } else {
+      setOutros((prev) => prev.map((x) => (x.id === t.id ? { ...x, pago: novoValor } : x)));
+    }
+    showToast(novoValor ? 'Marcado como pago!' : 'Marcado como não pago');
   };
 
   /* ── Agrupamento de parcelas (cada fonte tem sua própria chave) ── */
@@ -605,6 +661,7 @@ export default function App() {
       descricao: t.descricao || '',
       valor: t.valor,
       periodo: t.periodo || PERIODOS[0],
+      pago: !!t.pago,
     });
     setEditarProximas(false);
     setConfirmDelete(false);
@@ -618,6 +675,7 @@ export default function App() {
       categoria: editForm.categoria || null,
       descricao: editForm.descricao,
       valor: Number(editForm.valor),
+      pago: !!editForm.pago,
     };
     if (editando._origem === 'outros') payload.periodo = editForm.periodo;
 
@@ -661,6 +719,13 @@ export default function App() {
   const totalCartao = cartaoDoMes.reduce((a, b) => a + Number(b.valor || 0), 0);
   const totalGeral = totalOutros + totalCartao;
 
+  /* ── Totais de pago x não pago do mês (combinando as duas fontes) ── */
+  const todosDoMes = [...outrosDoMes, ...cartaoDoMes];
+  const totalPago = todosDoMes.filter((t) => t.pago).reduce((a, b) => a + Number(b.valor || 0), 0);
+  const totalNaoPago = todosDoMes.filter((t) => !t.pago).reduce((a, b) => a + Number(b.valor || 0), 0);
+  const qtdPagos = todosDoMes.filter((t) => t.pago).length;
+  const qtdNaoPagos = todosDoMes.filter((t) => !t.pago).length;
+
   const porPeriodo = PERIODOS.map((p) => {
     // o cartão (Fernanda) é sempre somado dentro do 1º Período
     const itensOutros = outrosDoMes.filter((t) => t.periodo === p);
@@ -690,6 +755,8 @@ export default function App() {
     .filter((t) => {
       if (filtroCategoria && t.categoria !== filtroCategoria) return false;
       if (filtroFonte && t._origem !== filtroFonte) return false;
+      if (filtroPago === 'pago' && !t.pago) return false;
+      if (filtroPago === 'pendente' && t.pago) return false;
       if (filtroDataInicio && t.data < filtroDataInicio) return false;
       if (filtroDataFim && t.data > filtroDataFim) return false;
       return true;
@@ -762,6 +829,7 @@ export default function App() {
           .app-mobile-list { display: none !important; }
           .app-table-wrap { display: block !important; background: ${C.surface}; border: 1px solid ${C.border}; border-radius: 16px; box-shadow: ${C.shadowSm}; overflow: hidden; }
           .app-periodo-row3 { grid-template-columns: repeat(3, 1fr) !important; }
+          .app-pagamento-row2 { grid-template-columns: repeat(2, 1fr) !important; }
         }
         .app-table-wrap { display: none; }
         .app-table { width: 100%; border-collapse: collapse; font-family: 'DM Sans', sans-serif; }
@@ -776,6 +844,7 @@ export default function App() {
         .app-table-valor { text-align: right; font-weight: 800; font-size: 15px; }
         .app-table-pill { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: 13px; font-weight: 700; }
         .app-table-editbtn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0; margin-right: 10px; vertical-align: middle; }
+        .app-table-pagobtn { border: 1.5px solid ${C.border}; background: none; border-radius: 6px; width: 22px; height: 22px; cursor: pointer; font-size: 12px; padding: 0; margin-right: 10px; vertical-align: middle; }
         @media (min-width: 900px) {
           .app-form-wrap { margin: 0; }
           .app-form-toprow { display: flex !important; align-items: flex-start; gap: 24px; }
@@ -903,6 +972,24 @@ export default function App() {
                 value={editForm.valor}
                 onChange={(e) => setEditForm({ ...editForm, valor: e.target.value })}
               />
+              <div
+                style={{
+                  ...S.checkRow,
+                  background: C.surface2,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                }}
+              >
+                <div
+                  style={{ ...S.checkbox, ...(editForm.pago ? { background: C.accent, borderColor: C.accent } : {}) }}
+                  onClick={() => setEditForm({ ...editForm, pago: !editForm.pago })}
+                >
+                  {editForm.pago && <span style={{ color: '#fff', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                </div>
+                <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>
+                  {editForm.pago ? 'Conta já paga' : 'Conta ainda não paga'}
+                </span>
+              </div>
               {editando.parcelado && getProximasParcelas(editando).length > 0 && (
                 <div style={S.checkRow}>
                   <div
@@ -989,6 +1076,52 @@ export default function App() {
                       <p style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0 }}>{fmt(totalCartao)}</p>
                       <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '4px 0 0' }}>
                         Outros: {fmt(totalOutros)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* ── Pago x Não pago do mês ── */}
+                  <div style={S.pagamentoRow2} className="app-pagamento-row2">
+                    <div style={{ ...S.pagamentoCard, background: `${C.success}14`, borderColor: `${C.success}44` }}>
+                      <p
+                        style={{
+                          color: C.accentDark,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          margin: '0 0 6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        ✅ Pago
+                      </p>
+                      <p style={{ fontSize: 20, fontWeight: 800, color: C.accentDark, margin: 0 }}>{fmt(totalPago)}</p>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
+                        {qtdPagos} lançamento{qtdPagos !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div style={{ ...S.pagamentoCard, background: `${C.warning}14`, borderColor: `${C.warning}44` }}>
+                      <p
+                        style={{
+                          color: C.warning,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          margin: '0 0 6px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        ⏳ Não pago
+                      </p>
+                      <p style={{ fontSize: 20, fontWeight: 800, color: C.warning, margin: 0 }}>{fmt(totalNaoPago)}</p>
+                      <p style={{ fontSize: 11, color: C.muted, margin: '4px 0 0' }}>
+                        {qtdNaoPagos} lançamento{qtdNaoPagos !== 1 ? 's' : ''}
                       </p>
                     </div>
                   </div>
@@ -1112,6 +1245,12 @@ export default function App() {
                           </option>
                         ))}
                       </select>
+                      <select style={S.select} value={filtroPago} onChange={(e) => setFiltroPago(e.target.value)}>
+                        <option value="">Pago e não pago</option>
+                        <option value="pago">✅ Só pagos</option>
+                        <option value="pendente">⏳ Só não pagos</option>
+                      </select>
+                      <div />
                       <div style={S.dateField}>
                         <span style={S.dateLabel}>De</span>
                         <input
@@ -1131,12 +1270,13 @@ export default function App() {
                         />
                       </div>
                     </div>
-                    {(filtroCategoria || filtroFonte || filtroDataInicio || filtroDataFim) && (
+                    {(filtroCategoria || filtroFonte || filtroPago || filtroDataInicio || filtroDataFim) && (
                       <button
                         style={S.clearBtn}
                         onClick={() => {
                           setFiltroCategoria('');
                           setFiltroFonte('');
+                          setFiltroPago('');
                           setFiltroDataInicio('');
                           setFiltroDataFim('');
                         }}
@@ -1158,8 +1298,9 @@ export default function App() {
                             t._origem === 'cartao'
                               ? C.accentDark
                               : PERIODO_COLORS[t.periodo] || CAT_COLORS[t.categoria] || C.border;
+                          const chave = `${t._origem}-${t.id}`;
                           return (
-                            <div key={`${t._origem}-${t.id}`}>
+                            <div key={chave}>
                               <div
                                 className="app-row-item"
                                 style={{
@@ -1167,9 +1308,23 @@ export default function App() {
                                   borderTop: idx === 0 ? 'none' : S.item.borderTop,
                                   borderLeft: `3px solid ${cor}`,
                                   cursor: t.parcelado ? 'pointer' : 'default',
+                                  opacity: t.pago ? 0.72 : 1,
                                 }}
-                                onClick={() => t.parcelado && setExpandedId(isOpen ? null : `${t._origem}-${t.id}`)}
+                                onClick={() => t.parcelado && setExpandedId(isOpen ? null : chave)}
                               >
+                                <button
+                                  style={{
+                                    ...S.pagoBtn,
+                                    ...(t.pago
+                                      ? { background: C.accent, borderColor: C.accent, color: '#fff' }
+                                      : { color: 'transparent' }),
+                                  }}
+                                  onClick={(e) => togglePago(t, e)}
+                                  disabled={togglingPagoId === chave}
+                                  title={t.pago ? 'Marcar como não pago' : 'Marcar como pago'}
+                                >
+                                  ✓
+                                </button>
                                 <button style={S.editBtn} onClick={(e) => abrirEdicao(t, e)} title="Editar">
                                   ✏️
                                 </button>
@@ -1184,6 +1339,7 @@ export default function App() {
                                       whiteSpace: 'nowrap',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
+                                      textDecoration: t.pago ? 'line-through' : 'none',
                                     }}
                                   >
                                     {t.descricao || t.categoria || '(sem descrição)'}
@@ -1213,6 +1369,9 @@ export default function App() {
                                         {t.numero_parcela}/{t.total_parcelas}
                                       </span>
                                     )}
+                                    <span style={{ ...S.badge, color: t.pago ? C.accentDark : C.warning }}>
+                                      {t.pago ? '✅ Pago' : '⏳ Não pago'}
+                                    </span>
                                   </p>
                                 </div>
                                 <p style={{ margin: 0, fontWeight: 800, fontSize: 14, flexShrink: 0, color: C.text }}>
@@ -1248,38 +1407,63 @@ export default function App() {
                               <th>Categoria</th>
                               <th>Data</th>
                               <th>Parcela</th>
+                              <th>Pagamento</th>
                               <th style={{ textAlign: 'right' }}>Valor</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {listagem.map((t) => (
-                              <tr key={`${t._origem}-${t.id}`}>
-                                <td className="app-table-desc">
-                                  <button className="app-table-editbtn" onClick={(e) => abrirEdicao(t, e)} title="Editar">
-                                    ✏️
-                                  </button>
-                                  {t.descricao || '(sem descrição)'}
-                                </td>
-                                <td>
-                                  <span
-                                    className="app-table-pill"
-                                    style={{
-                                      background:
-                                        (t._origem === 'cartao' ? C.accentDark : PERIODO_COLORS[t.periodo] || C.muted) + '1F',
-                                      color: t._origem === 'cartao' ? C.accentDark : PERIODO_COLORS[t.periodo] || C.muted,
-                                    }}
-                                  >
-                                    {t._origem === 'cartao' ? '💳 Cartão' : t.periodo || 'Outros'}
-                                  </span>
-                                </td>
-                                <td style={{ color: C.muted }}>
-                                  {CAT_ICONS[t.categoria] || ''} {t.categoria || '—'}
-                                </td>
-                                <td>{t.data}</td>
-                                <td>{t.parcelado ? `${t.numero_parcela}/${t.total_parcelas}` : '—'}</td>
-                                <td className="app-table-valor">{fmt(t.valor)}</td>
-                              </tr>
-                            ))}
+                            {listagem.map((t) => {
+                              const chave = `${t._origem}-${t.id}`;
+                              return (
+                                <tr key={chave} style={{ opacity: t.pago ? 0.7 : 1 }}>
+                                  <td className="app-table-desc">
+                                    <button
+                                      className="app-table-pagobtn"
+                                      style={t.pago ? { background: C.accent, borderColor: C.accent, color: '#fff' } : { color: 'transparent' }}
+                                      onClick={(e) => togglePago(t, e)}
+                                      title={t.pago ? 'Marcar como não pago' : 'Marcar como pago'}
+                                    >
+                                      ✓
+                                    </button>
+                                    <button className="app-table-editbtn" onClick={(e) => abrirEdicao(t, e)} title="Editar">
+                                      ✏️
+                                    </button>
+                                    <span style={{ textDecoration: t.pago ? 'line-through' : 'none' }}>
+                                      {t.descricao || '(sem descrição)'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <span
+                                      className="app-table-pill"
+                                      style={{
+                                        background:
+                                          (t._origem === 'cartao' ? C.accentDark : PERIODO_COLORS[t.periodo] || C.muted) + '1F',
+                                        color: t._origem === 'cartao' ? C.accentDark : PERIODO_COLORS[t.periodo] || C.muted,
+                                      }}
+                                    >
+                                      {t._origem === 'cartao' ? '💳 Cartão' : t.periodo || 'Outros'}
+                                    </span>
+                                  </td>
+                                  <td style={{ color: C.muted }}>
+                                    {CAT_ICONS[t.categoria] || ''} {t.categoria || '—'}
+                                  </td>
+                                  <td>{t.data}</td>
+                                  <td>{t.parcelado ? `${t.numero_parcela}/${t.total_parcelas}` : '—'}</td>
+                                  <td>
+                                    <span
+                                      className="app-table-pill"
+                                      style={{
+                                        background: (t.pago ? C.accentDark : C.warning) + '1F',
+                                        color: t.pago ? C.accentDark : C.warning,
+                                      }}
+                                    >
+                                      {t.pago ? '✅ Pago' : '⏳ Não pago'}
+                                    </span>
+                                  </td>
+                                  <td className="app-table-valor">{fmt(t.valor)}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
