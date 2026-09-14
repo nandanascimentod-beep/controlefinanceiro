@@ -525,6 +525,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [togglingPagoId, setTogglingPagoId] = useState(null);
+  const [togglingCartao, setTogglingCartao] = useState(false);
 
   const [filtroCategoria, setFiltroCategoria] = useState('');
   const [filtroFonte, setFiltroFonte] = useState(''); // '', 'outros', 'cartao'
@@ -631,6 +632,24 @@ export default function App() {
     showToast(novoValor ? 'Marcado como pago!' : 'Marcado como não pago');
   };
 
+  /* ── Marcar/desmarcar TODO o cartão do mês como pago de uma vez
+     (o cartão é uma fatura só, então paga tudo junto) ── */
+  const handleToggleCartaoPago = async () => {
+    if (cartaoDoMes.length === 0) return;
+    const todosCartaoPagos = cartaoDoMes.every((t) => t.pago);
+    const novoValor = !todosCartaoPagos;
+    setTogglingCartao(true);
+    const ids = cartaoDoMes.map((t) => t.id);
+    const { error } = await supabase.from('cartao_compartilhado').update({ pago: novoValor }).in('id', ids);
+    setTogglingCartao(false);
+    if (error) {
+      showToast('Erro ao atualizar pagamento do cartão', 'error');
+      return;
+    }
+    setCartao((prev) => prev.map((x) => (ids.includes(x.id) ? { ...x, pago: novoValor } : x)));
+    showToast(novoValor ? 'Fatura do cartão marcada como paga!' : 'Fatura do cartão marcada como não paga');
+  };
+
   /* ── Agrupamento de parcelas (cada fonte tem sua própria chave) ── */
   const getGrupo = (t) => {
     if (!t.parcelado) return [t];
@@ -725,6 +744,7 @@ export default function App() {
   const totalNaoPago = todosDoMes.filter((t) => !t.pago).reduce((a, b) => a + Number(b.valor || 0), 0);
   const qtdPagos = todosDoMes.filter((t) => t.pago).length;
   const qtdNaoPagos = todosDoMes.filter((t) => !t.pago).length;
+  const cartaoTotalmentePago = cartaoDoMes.length > 0 && cartaoDoMes.every((t) => t.pago);
 
   const porPeriodo = PERIODOS.map((p) => {
     // o cartão (Fernanda) é sempre somado dentro do 1º Período
@@ -1079,6 +1099,51 @@ export default function App() {
                       </p>
                     </div>
                   </div>
+
+                  {/* ── Fatura do cartão: marcar tudo como pago de uma vez ── */}
+                  {cartaoDoMes.length > 0 && (
+                    <div
+                      style={{
+                        ...S.card,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: '14px 16px',
+                      }}
+                    >
+                      <div>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.text }}>
+                          💳 Fatura do cartão {cartaoTotalmentePago ? '(paga)' : '(não paga)'}
+                        </p>
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: C.muted }}>
+                          {fmt(totalCartao)} · {cartaoDoMes.length} lançamento{cartaoDoMes.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleToggleCartaoPago}
+                        disabled={togglingCartao}
+                        style={{
+                          padding: '9px 16px',
+                          borderRadius: 10,
+                          border: `1.5px solid ${cartaoTotalmentePago ? C.accent : C.border}`,
+                          background: cartaoTotalmentePago ? C.accent : C.surface2,
+                          color: cartaoTotalmentePago ? '#fff' : C.text,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          fontFamily: "'DM Sans', sans-serif",
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {togglingCartao
+                          ? 'Salvando...'
+                          : cartaoTotalmentePago
+                          ? '✓ Marcada como paga'
+                          : 'Marcar fatura como paga'}
+                      </button>
+                    </div>
+                  )}
 
                   {/* ── Pago x Não pago do mês ── */}
                   <div style={S.pagamentoRow2} className="app-pagamento-row2">
