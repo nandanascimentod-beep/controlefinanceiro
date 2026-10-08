@@ -557,7 +557,7 @@ export default function App() {
     supabase
       .from('transacoes')
       .select('*')
-      .in('metodo_pagamento', ['Outros', 'Pix', 'Débito'])
+      .in('metodo_pagamento', ['Outros', 'Pix', 'debito'])
       .order('data', { ascending: false }),
 
     supabase
