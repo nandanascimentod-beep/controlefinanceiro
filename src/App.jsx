@@ -557,7 +557,7 @@ export default function App() {
     supabase
       .from('transacoes')
       .select('*')
-      .eq('metodo_pagamento', 'Outros')
+      .in('metodo_pagamento', ['Outros', 'Pix', 'Débito'])
       .order('data', { ascending: false }),
 
     supabase
@@ -565,6 +565,24 @@ export default function App() {
       .select('*')
       .eq('responsavel', RESPONSAVEL_CARTAO)
       .order('data', { ascending: false }),
+  ]);
+
+  if (errOutros) {
+    console.error('Erro ao buscar transacoes:', errOutros);
+  }
+
+  if (errCartao) {
+    console.error('Erro ao buscar cartao_compartilhado:', errCartao);
+  }
+
+  if (errOutros || errCartao) {
+    showToast('Erro ao buscar dados', 'error');
+  }
+
+  setOutros(dataOutros || []);
+  setCartao(dataCartao || []);
+  setLoading(false);
+};
   ]);
 
   console.log('========================================');
