@@ -548,24 +548,56 @@ export default function App() {
   };
 
   const fetchData = async () => {
-    setLoading(true);
-    const [{ data: dataOutros, error: errOutros }, { data: dataCartao, error: errCartao }] =
-      await Promise.all([
-        supabase
-          .from('transacoes')
-          .select('*')
-          .eq('metodo_pagamento', 'Outros')
-          .order('data', { ascending: false }),
-        supabase
-          .from('cartao_compartilhado')
-          .select('*')
-          .eq('responsavel', RESPONSAVEL_CARTAO)
-          .order('data', { ascending: false }),
-      ]);
-    if (errOutros || errCartao) showToast('Erro ao buscar dados', 'error');
-    setOutros(dataOutros || []);
-    setCartao(dataCartao || []);
-    setLoading(false);
+  setLoading(true);
+
+  const [
+    { data: dataOutros, error: errOutros },
+    { data: dataCartao, error: errCartao },
+  ] = await Promise.all([
+    supabase
+      .from('transacoes')
+      .select('*')
+      .eq('metodo_pagamento', 'Outros')
+      .order('data', { ascending: false }),
+
+    supabase
+      .from('cartao_compartilhado')
+      .select('*')
+      .eq('responsavel', RESPONSAVEL_CARTAO)
+      .order('data', { ascending: false }),
+  ]);
+
+  console.log('========================================');
+  console.log('📦 TRANSAÇÕES DA TABELA transacoes');
+  console.log('========================================');
+  console.log('Quantidade:', dataOutros ? dataOutros.length : 0);
+  console.log('Dados:', dataOutros);
+  console.log('Erro:', errOutros);
+
+  console.log('========================================');
+  console.log('💳 TRANSAÇÕES DA TABELA cartao_compartilhado');
+  console.log('========================================');
+  console.log('Quantidade:', dataCartao ? dataCartao.length : 0);
+  console.log('Dados:', dataCartao);
+  console.log('Erro:', errCartao);
+
+  console.log('========================================');
+  console.log('📅 MÊS SELECIONADO NO APLICATIVO');
+  console.log('========================================');
+  console.log('Mês:', mes);
+
+  if (errOutros || errCartao) {
+    console.error('Erro ao buscar dados:', {
+      errOutros,
+      errCartao,
+    });
+
+    showToast('Erro ao buscar dados', 'error');
+  }
+
+  setOutros(dataOutros || []);
+  setCartao(dataCartao || []);
+  setLoading(false);
   };
 
   useEffect(() => {
