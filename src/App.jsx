@@ -782,7 +782,7 @@ export default function App() {
 
   /* ── DADOS DO MÊS ── */
 const outrosDoMes = outros;
-  const cartaoDoMes = cartao.filter((t) => normalizarMes(t.mes_referente) === mes);
+const outrosDoMes = outros.filter((t) => String(t.mes_referente || '').trim() === mes);
 
   const totalOutros = outrosDoMes.reduce((a, b) => a + Number(b.valor || 0), 0);
   const totalCartao = cartaoDoMes.reduce((a, b) => a + Number(b.valor || 0), 0);
