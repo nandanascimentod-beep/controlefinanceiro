@@ -518,7 +518,7 @@ const S = {
 /* ═══════════════════════════════════════════════════════════════════════ */
 export default function App() {
   const [tab, setTab] = useState('dashboard');
-  const [outros, setOutros] = useState([]); // tabela "transacoes" (metodo_pagamento = 'Outros')
+  const [outros, setOutros] = useState([]); // tabela "transacoes" (Outros, Pix e Débito)
   const [cartao, setCartao] = useState([]); // tabela "cartao_compartilhado" (responsavel = 'Fernanda')
   const [mes, setMes] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
