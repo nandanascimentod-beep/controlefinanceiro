@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 /* ═══════════════════════════════════════════════════════════════════════
    Este app junta DUAS fontes de dados do Supabase:
    1) tabela "transacoes"          -> seus lançamentos pessoais ("Outros")
+                                       + lançamentos automáticos do banco
+                                       (metodo_pagamento = 'debito' / 'Pix')
    2) tabela "cartao_compartilhado" -> fatura do cartão da família, filtrada
                                         apenas pelo responsável "Fernanda"
 
@@ -16,7 +18,7 @@ import { supabase } from './supabase';
       O campo metodo_pagamento passa a aceitar também o valor "Outros"
       (além de "Cartão de Crédito" e "Boleto" que já existiam).
 
-   ⚠️ NOVO — controle de pagamento ("já paguei essa conta?"):
+   ⚠️ Controle de pagamento ("já paguei essa conta?"):
       Precisa existir a coluna "pago" (boolean, aceita null, default false)
       em AMBAS as tabelas: "transacoes" e "cartao_compartilhado".
       Se ainda não existir, rode no Supabase:
@@ -39,6 +41,7 @@ const CATEGORIAS = [
   'Presentes',
   'Roupas',
 ];
+const SEM_CATEGORIA = 'Sem categoria';
 const CAT_COLORS = {
   Apartamento: '#2F6FED',
   Carro: '#F79009',
@@ -52,6 +55,7 @@ const CAT_COLORS = {
   Outros: '#667085',
   Presentes: '#EAAA08',
   Roupas: '#0BA5EC',
+  [SEM_CATEGORIA]: '#98A2B3',
 };
 const CAT_ICONS = {
   Apartamento: '🏠',
@@ -66,6 +70,7 @@ const CAT_ICONS = {
   Outros: '📦',
   Presentes: '🎁',
   Roupas: '👗',
+  [SEM_CATEGORIA]: '❔',
 };
 
 const PERIODOS = ['1º Período', '2º Período', 'Extra'];
@@ -77,6 +82,10 @@ const PERIODO_COLORS = {
 
 const RESPONSAVEL_CARTAO = 'Fernanda';
 
+/* Valores de metodo_pagamento que entram na fonte "Outros".
+   Inclui variações de maiúscula/minúscula dos lançamentos automáticos do banco. */
+const METODOS_OUTROS = ['Outros', 'Pix', 'PIX', 'pix', 'debito', 'Debito', 'Débito', 'débito'];
+
 const fmt = (v) =>
   `R$ ${Number(v || 0).toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
@@ -85,9 +94,10 @@ const fmt = (v) =>
 
 function normalizarMes(mes) {
   if (!mes) return null;
-  if (mes.includes('-')) return mes.slice(0, 7);
-  if (mes.includes('/')) {
-    const [m, a] = mes.split('/');
+  const s = String(mes).trim();
+  if (s.includes('-')) return s.slice(0, 7);
+  if (s.includes('/')) {
+    const [m, a] = s.split('/');
     return `20${a}-${m.padStart(2, '0')}`;
   }
   return null;
@@ -518,7 +528,7 @@ const S = {
 /* ═══════════════════════════════════════════════════════════════════════ */
 export default function App() {
   const [tab, setTab] = useState('dashboard');
-  const [outros, setOutros] = useState([]); // tabela "transacoes" (Outros, Pix e Débito)
+  const [outros, setOutros] = useState([]); // tabela "transacoes" (Outros, Pix e Débito do banco)
   const [cartao, setCartao] = useState([]); // tabela "cartao_compartilhado" (responsavel = 'Fernanda')
   const [mes, setMes] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
@@ -547,75 +557,42 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  /* ── BUSCA DOS DADOS (as duas tabelas em paralelo) ── */
   const fetchData = async () => {
-  setLoading(true);
+    setLoading(true);
 
-  const [
-    { data: dataOutros, error: errOutros },
-    { data: dataCartao, error: errCartao },
-  ] = await Promise.all([
-    supabase
-      .from('transacoes')
-      .select('*')
-      .in('metodo_pagamento', ['Outros', 'Pix', 'debito'])
-      .order('data', { ascending: false }),
+    const [
+      { data: dataOutros, error: errOutros },
+      { data: dataCartao, error: errCartao },
+    ] = await Promise.all([
+      supabase
+        .from('transacoes')
+        .select('*')
+        .in('metodo_pagamento', METODOS_OUTROS)
+        .order('data', { ascending: false })
+        .limit(5000),
 
-    supabase
-      .from('cartao_compartilhado')
-      .select('*')
-      .eq('responsavel', RESPONSAVEL_CARTAO)
-      .order('data', { ascending: false }),
-  ]);
+      supabase
+        .from('cartao_compartilhado')
+        .select('*')
+        .eq('responsavel', RESPONSAVEL_CARTAO)
+        .order('data', { ascending: false })
+        .limit(5000),
+    ]);
 
-  if (errOutros) {
-    console.error('Erro ao buscar transacoes:', errOutros);
-  }
+    /* Diagnóstico: abra o console do navegador (F12) para conferir
+       quantos registros chegaram de cada tabela e o mês selecionado. */
+    console.log('📦 transacoes:', dataOutros ? dataOutros.length : 0, 'registros | erro:', errOutros);
+    console.log('💳 cartao_compartilhado:', dataCartao ? dataCartao.length : 0, 'registros | erro:', errCartao);
 
-  if (errCartao) {
-    console.error('Erro ao buscar cartao_compartilhado:', errCartao);
-  }
+    if (errOutros || errCartao) {
+      console.error('Erro ao buscar dados:', { errOutros, errCartao });
+      showToast('Erro ao buscar dados', 'error');
+    }
 
-  if (errOutros || errCartao) {
-    showToast('Erro ao buscar dados', 'error');
-  }
-
-  setOutros(dataOutros || []);
-  setCartao(dataCartao || []);
-  setLoading(false);
-};
-  ]);
-
-  console.log('========================================');
-  console.log('📦 TRANSAÇÕES DA TABELA transacoes');
-  console.log('========================================');
-  console.log('Quantidade:', dataOutros ? dataOutros.length : 0);
-  console.log('Dados:', dataOutros);
-  console.log('Erro:', errOutros);
-
-  console.log('========================================');
-  console.log('💳 TRANSAÇÕES DA TABELA cartao_compartilhado');
-  console.log('========================================');
-  console.log('Quantidade:', dataCartao ? dataCartao.length : 0);
-  console.log('Dados:', dataCartao);
-  console.log('Erro:', errCartao);
-
-  console.log('========================================');
-  console.log('📅 MÊS SELECIONADO NO APLICATIVO');
-  console.log('========================================');
-  console.log('Mês:', mes);
-
-  if (errOutros || errCartao) {
-    console.error('Erro ao buscar dados:', {
-      errOutros,
-      errCartao,
-    });
-
-    showToast('Erro ao buscar dados', 'error');
-  }
-
-  setOutros(dataOutros || []);
-  setCartao(dataCartao || []);
-  setLoading(false);
+    setOutros(dataOutros || []);
+    setCartao(dataCartao || []);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -781,8 +758,8 @@ export default function App() {
   };
 
   /* ── DADOS DO MÊS ── */
-const outrosDoMes = outros;
-const outrosDoMes = outros.filter((t) => String(t.mes_referente || '').trim() === mes);
+  const outrosDoMes = outros.filter((t) => normalizarMes(t.mes_referente) === mes);
+  const cartaoDoMes = cartao.filter((t) => normalizarMes(t.mes_referente) === mes);
 
   const totalOutros = outrosDoMes.reduce((a, b) => a + Number(b.valor || 0), 0);
   const totalCartao = cartaoDoMes.reduce((a, b) => a + Number(b.valor || 0), 0);
@@ -807,12 +784,15 @@ const outrosDoMes = outros.filter((t) => String(t.mes_referente || '').trim() ==
       total: itens.reduce((a, b) => a + Number(b.valor || 0), 0),
       totalCartao: itensCartao.reduce((a, b) => a + Number(b.valor || 0), 0),
       totalOutros: itensOutros.reduce((a, b) => a + Number(b.valor || 0), 0),
-      porCategoria: CATEGORIAS.map((cat) => ({
-        nome: cat,
-        valor: itens
-          .filter((t) => t.categoria === cat)
-          .reduce((a, b) => a + Number(b.valor || 0), 0),
-      })).filter((c) => c.valor > 0),
+      // inclui "Sem categoria" para lançamentos sem categoria (ex.: os automáticos do banco)
+      porCategoria: [...CATEGORIAS, SEM_CATEGORIA]
+        .map((cat) => ({
+          nome: cat,
+          valor: itens
+            .filter((t) => (cat === SEM_CATEGORIA ? !CATEGORIAS.includes(t.categoria) : t.categoria === cat))
+            .reduce((a, b) => a + Number(b.valor || 0), 0),
+        }))
+        .filter((c) => c.valor > 0),
     };
   });
 
@@ -823,7 +803,9 @@ const outrosDoMes = outros.filter((t) => String(t.mes_referente || '').trim() ==
   ];
   const listagem = unificados
     .filter((t) => {
-      if (filtroCategoria && t.categoria !== filtroCategoria) return false;
+      if (filtroCategoria === SEM_CATEGORIA) {
+        if (CATEGORIAS.includes(t.categoria)) return false;
+      } else if (filtroCategoria && t.categoria !== filtroCategoria) return false;
       if (filtroFonte && t._origem !== filtroFonte) return false;
       if (filtroPago === 'pago' && !t.pago) return false;
       if (filtroPago === 'pendente' && t.pago) return false;
@@ -1359,6 +1341,7 @@ const outrosDoMes = outros.filter((t) => String(t.mes_referente || '').trim() ==
                             {c}
                           </option>
                         ))}
+                        <option value={SEM_CATEGORIA}>{SEM_CATEGORIA}</option>
                       </select>
                       <select style={S.select} value={filtroPago} onChange={(e) => setFiltroPago(e.target.value)}>
                         <option value="">Pago e não pago</option>
