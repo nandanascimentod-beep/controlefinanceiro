@@ -138,6 +138,7 @@ export default function App() {
   const totalPaidThisMonth = sum(expenses.filter(paid));
   // Atraso exige vencimento real: não inferir vencimento de compras do cartão.
   const totalOverdueThisMonth = sum(accountsMonth.filter(x => !paid(x) && due(x) < today()));
+  const totalOpenThisMonth = sum(accountsMonth.filter(x => !paid(x) && due(x) >= today()));
   const periodRows = PERIODOS.map(periodo=>{
     const others=otherMonth.filter(x=>(x.periodo||'1º Período')===periodo && (!isDebitOrPix(x) || paid(x)));
     const cards=periodo==='1º Período'?cardMonth:[];
@@ -342,6 +343,7 @@ const CSS = `
         <div className="mf-metric amber mf-month-summary">
           <div className="label">Resumo</div>
           <div className="mf-period-detail"><span>Valor pago</span><strong>{brl(totalPaidThisMonth)}</strong></div>
+          <div className="mf-period-detail"><span>Valor em aberto</span><strong>{brl(totalOpenThisMonth)}</strong></div>
           <div className="mf-period-detail mf-overdue-detail"><span>Valor em atraso</span><strong>{brl(totalOverdueThisMonth)}</strong></div>
         </div>
       </div>
