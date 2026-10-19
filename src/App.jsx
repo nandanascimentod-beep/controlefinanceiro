@@ -56,6 +56,7 @@ export default function App() {
   const [limitDraft, setLimitDraft] = useState(DEFAULT_LIMITS);
   const [settings, setSettings] = useState({ saldo_inicial: 0, saldo_data: today(), vale_saldo: 0, receita_dia5: 6000, receita_dia20: 4200, vale_mensal: 1200 });
   const [saving, setSaving] = useState(false);
+  const [showLimits, setShowLimits] = useState(false);
   const load = async () => {
     setLoading(true);
     setError('');
@@ -105,6 +106,11 @@ export default function App() {
   const pendingThisMonth = items.filter(x => isExpense(x) && !paid(x) && due(x) >= `${mes}-01` && due(x) <= `${mes}-31`);
   const remaining = num(balance - sum(items.filter(x => isExpense(x) && !paid(x) && due(x) <= `${mes}-31`)));
   const monthExpense = sum(expenses), monthPaid = sum(expenses.filter(paid));
+  const monthPending = sum(expenses.filter(x => !paid(x)));
+  const monthNonCardPending = sum(current.filter(x => isExpense(x) && !isCard(x) && !paid(x)));
+  const monthCashPaid = sum(current.filter(x => isExpense(x) && !isCard(x) && paid(x)));
+  const monthName = new Date(Number(mes.slice(0,4)), Number(mes.slice(5,7))-1, 1).toLocaleDateString('pt-BR', {month:'long', year:'numeric'});
+  const cardTotal = sum(cardMonth);
   const forecast = Array.from({ length: 5 }, (_, i) => { const m = ym(addMonths(`${mes}-05`, i)); const known = items.filter(x => isExpense(x) && ym(x.mes_referente || due(x)) === m); return { mes: m, contas: sum(known.filter(x => !isCard(x))), cartao: sum(known.filter(isCard)), total: sum(known) }; });
   const byCategory = [...new Set([...CATS, ...expenses.map(x => x.categoria || 'Sem categoria')])].map(cat => ({ cat, value: sum(expenses.filter(x => (x.categoria || 'Sem categoria') === cat)) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -209,229 +215,51 @@ export default function App() {
     else
       await load();
   };
-  const nav = [['inicio', 'Início'], ['contas', 'Contas a pagar'], ['debito', 'Pagos no débito'], ['cartao', 'Cartão'], ['planejamento', 'Planejamento'], ['dividas', 'Dívidas'], ['lancamentos', 'Lançamentos'], ['novo', editing ? 'Editar' : 'Novo +'], ['ajustes', 'Ajustes']];
-  const table = (rows, actions = true) => <div style={{ overflowX: 'auto' }}>
-    <table style={style.table}>
-      <thead>
-        <tr>
-          {['Vencimento', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Situação', ...(actions ? ['Ações'] : [])].map(h => <th key={h} style={{ ...style.td, color: '#667085' }}>{h}</th>)}</tr>
-      </thead>
-      <tbody>{rows.map(x => <tr key={`${x.fonte}-${x.id}`}>
-        <td style={style.td}>{dateBR(due(x))}</td>
-        <td style={style.td}>
-          <strong>{x.descricao}</strong>{x.parcelado && <div style={{ fontSize: 11, color: '#667085' }}>{x.numero_parcela}/{x.total_parcelas}</div>}</td>
-        <td style={style.td}>{x.categoria || 'Sem categoria'}</td>
-        <td style={style.td}>{isCard(x) ? 'Cartão' : x.metodo_pagamento || 'Outros'}</td>
-        <td style={{ ...style.td, fontWeight: 700, whiteSpace: 'nowrap' }}>{brl(x.valor)}</td>
-        <td style={style.td}>
-          <span style={{ ...style.pill, background: paid(x) ? '#E3F5EA' : due(x) < today() ? '#FDE8E8' : '#FFF2D6', color: paid(x) ? '#11673C' : due(x) < today() ? '#A52626' : '#985C05' }}>{paid(x) ? 'Pago' : due(x) < today() ? 'Vencido' : 'A pagar'}</span>
-        </td>{actions && <td style={{ ...style.td, whiteSpace: 'nowrap' }}>
-          <button style={style.secondary} onClick={() => toggle(x)}>{paid(x) ? 'Desfazer' : 'Pagar'}</button>
-          {!isCard(x) && <button style={{ ...style.secondary, marginLeft: 4 }} onClick={() => edit(x)}>Editar</button>}{!isCard(x) && <button style={{ ...style.secondary, marginLeft: 4, color: '#C43232' }} onClick={() => remove(x)}>Excluir</button>}</td>}</tr>)}</tbody>
-    </table>
-    {!rows.length && <Empty>Nenhum lançamento encontrado.</Empty>}</div>;
-  return <div style={style.page}>
-    <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-      <div>
-        <div style={{ color: '#168157', fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>CONTROLE FINANCEIRO FAMILIAR</div>
-        <h1 style={{ fontSize: 26, margin: '4px 0' }}>Minhas Finanças</h1>
+
+const CSS = `
+*{box-sizing:border-box}body{margin:0}.mf-app{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#20334a;background:#f3f6fb;min-height:100vh;font-size:14px}.mf-app button,.mf-app input,.mf-app select,.mf-app textarea{font:inherit}.mf-app button{cursor:pointer}.mf-shell{max-width:1230px;margin:auto;padding:30px 22px 65px}.mf-header{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:23px}.mf-eyebrow{color:#64748b;font-size:11px;font-weight:800;letter-spacing:1.7px;text-transform:uppercase}.mf-header h1{font-size:29px;letter-spacing:-1px;margin:4px 0 0;color:#10263f}.mf-month{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e1e8f0;border-radius:13px;padding:7px 10px;box-shadow:0 3px 14px #233c6110}.mf-month button{border:0;background:#eef3f8;border-radius:8px;width:31px;height:32px;color:#38516b;font-size:20px}.mf-month input{border:0;background:transparent;padding:6px;font-weight:700;color:#20334a;min-width:143px;outline:none}.mf-nav{display:flex;gap:6px;flex-wrap:wrap;padding:7px;background:#fff;border:1px solid #e6ebf2;border-radius:15px;margin-bottom:22px;box-shadow:0 5px 22px #1b365a09}.mf-nav button{border:0;background:transparent;color:#5a6b81;padding:10px 13px;border-radius:10px;font-weight:650;font-size:13px;white-space:nowrap}.mf-nav button:hover{background:#f1f5f9}.mf-nav button.active{background:#e7f5ef;color:#0a7956}.mf-nav button.mf-add{margin-left:auto;background:#137d5d;color:white;padding:10px 18px}.mf-nav button.mf-add.active{background:#0b654a}.mf-panel{background:#fff;border:1px solid #e5eaf2;border-radius:17px;padding:23px;margin-bottom:18px;box-shadow:0 6px 28px #20385508}.mf-panel h2{font-size:18px;letter-spacing:-.35px;margin:0 0 5px;color:#142a43}.mf-panel h3{font-size:15px;margin:0 0 10px}.mf-sub{font-size:12.5px;color:#7b8a9e;line-height:1.65;margin:4px 0 16px}.mf-section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:16px}.mf-section-head .mf-sub{margin-bottom:0}.mf-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:18px}.mf-metric{background:#fff;border:1px solid #e5eaf2;border-radius:16px;padding:19px;box-shadow:0 5px 22px #1b365a07;position:relative;overflow:hidden}.mf-metric:before{content:'';height:3px;position:absolute;top:0;left:0;right:0;background:#91a5c0}.mf-metric.green:before{background:#19a178}.mf-metric.red:before{background:#e97d73}.mf-metric.blue:before{background:#628eea}.mf-metric.amber:before{background:#f1b65b}.mf-metric .label{font-size:12px;color:#6d7f95;font-weight:600;min-height:31px}.mf-metric .value{font-size:clamp(20px,2vw,27px);letter-spacing:-.8px;font-weight:800;color:#162d47;margin:5px 0}.mf-metric .hint{font-size:11px;color:#94a1b2}.mf-grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:18px}.mf-grid2.equal{grid-template-columns:1fr 1fr}.mf-btn{border:0;background:#137d5d;color:#fff;padding:11px 17px;border-radius:10px;font-weight:750}.mf-btn:hover{background:#0c694c}.mf-btn.secondary{background:#eef4f7;color:#33536c}.mf-btn.ghost{background:#fff;color:#38536b;border:1px solid #dfe6ef}.mf-btn.danger{color:#b83742;background:#fff0f1}.mf-btn:disabled{opacity:.55;cursor:not-allowed}.mf-btn.small{padding:7px 10px;font-size:12px}.mf-tablewrap{overflow:auto;border:1px solid #edf0f4;border-radius:12px}.mf-table{width:100%;border-collapse:collapse;min-width:710px;text-align:left}.mf-table th{font-size:11px;text-transform:uppercase;letter-spacing:.55px;color:#8b99aa;background:#f8fafc;font-weight:750;padding:14px 13px}.mf-table td{border-top:1px solid #edf0f4;padding:13px;vertical-align:middle;font-size:13px}.mf-table tr:hover td{background:#fbfcfe}.mf-desc{font-weight:700;color:#273c54}.mf-muted{font-size:11px;color:#91a0b0;margin-top:3px}.mf-money{font-weight:800;white-space:nowrap;color:#1b334b}.mf-badge{display:inline-block;padding:5px 9px;border-radius:99px;font-size:11px;font-weight:750;white-space:nowrap}.mf-badge.paid{background:#e6f7ef;color:#0e875b}.mf-badge.overdue{background:#fff0ef;color:#b84440}.mf-badge.pending{background:#fff6e5;color:#a16a11}.mf-actions{display:flex;gap:5px;flex-wrap:wrap;min-width:190px}.mf-empty{padding:25px;text-align:center;color:#8a98aa;font-size:13px}.mf-chartrow{display:flex;gap:28px;align-items:center;flex-wrap:wrap}.mf-donut{width:174px;height:174px;border-radius:50%;flex:none;display:grid;place-items:center}.mf-donut-inner{width:115px;height:115px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column}.mf-donut-inner strong{font-size:21px;color:#162e47}.mf-donut-inner small{color:#8898a8;font-size:10px}.mf-legend{flex:1;min-width:165px}.mf-legendline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f0f3f6;font-size:12px}.mf-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}.mf-barline{margin-bottom:15px}.mf-barlabel{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:6px}.mf-barlabel span{color:#5d7087}.mf-barlabel strong{color:#243b53}.mf-track{height:9px;background:#eef2f7;border-radius:20px;overflow:hidden}.mf-fill{height:100%;border-radius:20px;min-width:0}.mf-info{background:#eef7f3;border:1px solid #d7eae1;border-radius:11px;padding:13px 15px;font-size:12px;color:#326451;line-height:1.6;margin-bottom:16px}.mf-warning{background:#fff5e8;border:1px solid #f9e0b8;color:#8d5c19}.mf-formhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}.mf-formgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}.mf-field{display:flex;flex-direction:column;gap:7px;min-width:0}.mf-field label,.mf-field .mf-fieldlabel{font-size:12px;color:#596c83;font-weight:750}.mf-control{display:block;width:100%;min-width:0;max-width:100%;height:43px;padding:9px 11px;border:1px solid #d9e2ed;border-radius:10px;background:#fff;color:#23364d;outline:none}.mf-control:focus{border-color:#15815e;box-shadow:0 0 0 3px #17a06b1c}.mf-control.area{height:auto;min-height:88px;resize:vertical}.mf-formsection{margin:21px 0 13px;font-size:12px;font-weight:850;letter-spacing:.8px;text-transform:uppercase;color:#8291a4;border-bottom:1px solid #edf0f5;padding-bottom:10px}.mf-formactions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px;align-items:center}.mf-check{display:flex;gap:10px;align-items:center;font-weight:650;color:#39516a;font-size:13px}.mf-check input{accent-color:#147d5d;width:17px;height:17px}.mf-limitgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.mf-limit{border:1px solid #e7edf3;border-radius:13px;padding:14px;background:#fff}.mf-limit .top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:10px}.mf-limit .top strong{font-size:13px}.mf-limit .amount{font-size:12px;color:#7b8a9b;margin-bottom:9px}.mf-limit .limitrow{display:flex;gap:8px;align-items:center;margin-top:12px}.mf-limit .limitrow label{font-size:11px;color:#8290a2;white-space:nowrap}.mf-limit .limitrow input{width:100%;min-width:0;height:36px}.mf-forecast{display:flex;gap:10px;align-items:flex-end;height:180px;margin:22px 0 9px}.mf-forecastcol{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:6px}.mf-forecastbar{width:min(64px,85%);border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,#5c91e9,#a8c8ff);min-height:3px}.mf-forecastcol strong{font-size:11px;color:#304b67}.mf-forecastcol span{font-size:11px;color:#7e8fa5}.mf-note{font-size:12px;color:#8a9aab;line-height:1.6}.mf-error{padding:13px 16px;background:#fff1f1;color:#a43b40;border:1px solid #ffd3d3;border-radius:12px;margin-bottom:16px;display:flex;justify-content:space-between;gap:15px;align-items:center}.mf-toplink{border:0;background:none;color:#138060;font-size:12px;font-weight:750}.mf-monthchip{background:#edf4ff;color:#35609c;padding:7px 12px;border-radius:99px;font-size:12px;font-weight:750}.mf-inlinefilters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.mf-inlinefilters select{width:220px}.mf-split{display:grid;grid-template-columns:1fr 1fr;gap:13px}.mf-totalbox{background:#f6f9fc;border-radius:13px;padding:16px}.mf-totalbox span{font-size:12px;color:#72849a}.mf-totalbox strong{display:block;font-size:23px;margin-top:7px;color:#233951}.mf-highlight{background:linear-gradient(120deg,#0c6f55,#168b67);color:white;border:0}.mf-highlight h2,.mf-highlight .mf-sub{color:white}.mf-highlight .mf-sub{opacity:.85}.mf-highlight .mf-big{font-size:33px;font-weight:850;letter-spacing:-1px;margin:13px 0 8px}.mf-compact{margin-bottom:12px}.mf-compact h2{margin-bottom:0}.mf-app input[type=number]{appearance:textfield}.mf-app input::-webkit-inner-spin-button{opacity:.35}
+@media(max-width:1000px){.mf-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.mf-grid2,.mf-grid2.equal{grid-template-columns:1fr}.mf-limitgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.mf-shell{padding:18px 12px 40px}.mf-header{align-items:flex-start;flex-direction:column}.mf-header h1{font-size:25px}.mf-nav{flex-wrap:nowrap;overflow:auto;padding:6px}.mf-nav button.mf-add{margin-left:0}.mf-panel{padding:16px}.mf-metrics{gap:9px}.mf-metric{padding:13px}.mf-metric .value{font-size:19px}.mf-formgrid{grid-template-columns:1fr}.mf-limitgrid{grid-template-columns:1fr}.mf-chartrow{justify-content:center}.mf-section-head{align-items:flex-start;flex-direction:column}.mf-split{grid-template-columns:1fr}}
+`;
+
+  const nav = [['inicio','Visão geral'],['contas','Contas a pagar'],['debito','Pagos'],['cartao','Cartão'],['planejamento','Planejamento'],['dividas','Atrasadas'],['lancamentos','Lançamentos'],['ajustes','Ajustes']];
+  const go = key => { setTab(key); setError(''); };
+  const badge = x => <span className={'mf-badge ' + (paid(x) ? 'paid' : due(x) < today() ? 'overdue' : 'pending')}>{paid(x) ? 'Pago' : due(x) < today() ? 'Atrasado' : 'Pendente'}</span>;
+  const table = (rows, actions = true) => <div className="mf-tablewrap"><table className="mf-table"><thead><tr>{['Data / vencimento','Descrição','Categoria','Pagamento','Valor','Status',...(actions ? ['Ações'] : [])].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map(x=><tr key={`${x.fonte}-${x.id}`}><td style={{whiteSpace:'nowrap'}}>{dateBR(due(x))}</td><td><div className="mf-desc">{x.descricao}</div>{x.parcelado && <div className="mf-muted">Parcela {x.numero_parcela}/{x.total_parcelas}</div>}</td><td>{x.categoria||'Outros'}</td><td>{isCard(x)?'Cartão':x.metodo_pagamento||'Outros'}</td><td className="mf-money">{brl(x.valor)}</td><td>{badge(x)}</td>{actions&&<td><div className="mf-actions"><button className="mf-btn small secondary" onClick={()=>toggle(x)}>{paid(x)?'Desfazer':'Marcar pago'}</button>{!isCard(x)&&<button className="mf-btn small ghost" onClick={()=>edit(x)}>Editar</button>}{!isCard(x)&&<button className="mf-btn small danger" onClick={()=>remove(x)}>Excluir</button>}</div></td>}</tr>)}</tbody></table>{rows.length===0&&<div className="mf-empty">Nenhum lançamento encontrado neste período.</div>}</div>;
+  const metric = (label, value, tone, hint) => <div className={'mf-metric '+(tone||'')}><div className="label">{label}</div><div className="value">{brl(value)}</div><div className="hint">{hint||'No mês selecionado'}</div></div>;
+  const categoryColors = ['#168b69','#638de2','#f1b55d','#ed8a7e','#9b83d4','#4aa6ad','#d97db0','#92a8be'];
+  const categories = byCategory.slice(0,7);
+  const catTotal = categories.reduce((a,x)=>a+x.value,0);
+  let offset = 0;
+  const donutStops = categories.map((x,i)=>{const start=offset;offset+=catTotal?x.value/catTotal*100:0;return `${categoryColors[i%categoryColors.length]} ${start}% ${offset}%`;});
+  const donutBackground = categories.length ? `conic-gradient(${donutStops.join(', ')})` : '#e8eef4';
+  const field = (label, element) => <div className="mf-field"><span className="mf-fieldlabel">{label}</span>{element}</div>;
+  const input = (key,type='text',props={}) => <input className="mf-control" type={type} value={form[key]??''} onChange={e=>set(key,e.target.value)} {...props}/>;
+  const select = (key, options) => <select className="mf-control" value={form[key]} onChange={e=>set(key,e.target.value)}>{options.map(x=>typeof x==='string'?<option key={x} value={x}>{x}</option>:<option key={x[0]} value={x[0]}>{x[1]}</option>)}</select>;
+  return <div className="mf-app"><style>{CSS}</style><main className="mf-shell">
+    <header className="mf-header"><div><div className="mf-eyebrow">Seu dinheiro, com clareza</div><h1>Minhas Finanças</h1></div><div className="mf-month"><button aria-label="Mês anterior" onClick={()=>setMes(ym(addMonths(`${mes}-01`,-1)))}>‹</button><input type="month" aria-label="Mês selecionado" value={mes} onChange={e=>setMes(e.target.value)}/><button aria-label="Próximo mês" onClick={()=>setMes(ym(addMonths(`${mes}-01`,1)))}>›</button></div></header>
+    <nav className="mf-nav">{nav.map(([key,label])=><button key={key} className={tab===key?'active':''} onClick={()=>go(key)}>{label}</button>)}<button className={'mf-add '+(tab==='novo'?'active':'')} onClick={()=>{setEditing(null);setForm(formInit());go('novo')}}>+ Novo lançamento</button></nav>
+    {error&&<div role="alert" className="mf-error"><span>{error}</span><button className="mf-btn small ghost" onClick={()=>setError('')}>Fechar</button></div>}
+    {loading?<section className="mf-panel"><p className="mf-sub">Carregando suas finanças...</p></section>:<>
+    {tab==='inicio'&&<>
+      <div className="mf-section-head"><div><h2 style={{fontSize:21,margin:0}}>Resumo de {monthName}</h2><p className="mf-sub">Somente lançamentos do mês selecionado. Sem somar o histórico inteiro.</p></div><span className="mf-monthchip">{current.length} lançamentos no mês</span></div>
+      <div className="mf-metrics">{metric('Contas ainda a pagar',monthNonCardPending,'amber','Despesas não pagas, sem cartão')}{metric('Pagamentos realizados',monthCashPaid,'green','Contas e despesas pagas fora do cartão')}{metric('Fatura do cartão',cardTotal,'blue','Compras deste mês')}{metric('Receitas registradas',sum(incomes),'','Entradas cadastradas neste mês')}</div>
+      <div className="mf-grid2">
+        <section className="mf-panel"><div className="mf-section-head"><div><h2>Para onde foi o dinheiro?</h2><p className="mf-sub">Distribuição das despesas do mês por categoria</p></div></div>{categories.length?<div className="mf-chartrow"><div className="mf-donut" style={{background:donutBackground}}><div className="mf-donut-inner"><small>Categorias</small><strong>{categories.length}</strong><small>com despesas</small></div></div><div className="mf-legend">{categories.map((x,i)=><div className="mf-legendline" key={x.cat}><span><i className="mf-dot" style={{background:categoryColors[i%categoryColors.length]}}/>{x.cat}</span><strong>{brl(x.value)}</strong></div>)}</div></div>:<div className="mf-empty">Ainda não há despesas neste mês.</div>}</section>
+        <section className="mf-panel"><h2>Pagamentos do mês</h2><p className="mf-sub">O que já foi pago e o que ainda está pendente</p><div className="mf-chartrow"><div className="mf-donut" style={{background:`conic-gradient(#19a078 0% ${monthExpense?monthPaid/monthExpense*100:0}%, #f3b966 ${monthExpense?monthPaid/monthExpense*100:0}% 100%)`}}><div className="mf-donut-inner"><strong>{monthExpense?Math.round(monthPaid/monthExpense*100):0}%</strong><small>pago</small></div></div><div className="mf-legend"><div className="mf-legendline"><span><i className="mf-dot" style={{background:'#19a078'}}/>Já pago</span><strong>{brl(monthPaid)}</strong></div><div className="mf-legendline"><span><i className="mf-dot" style={{background:'#f3b966'}}/>Ainda pendente</span><strong>{brl(monthPending)}</strong></div></div></div><p className="mf-note">Inclui compras do cartão na distribuição. A saída bancária do pagamento da fatura é controlada separadamente.</p></section>
       </div>
-      <input aria-label="Mês de referência" type="month" value={mes} onChange={e => setMes(e.target.value)} style={{ ...style.input, width: 170 }} />
-    </header>
-    <nav style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 18 }}>
-      {nav.map(([key, label]) => <button key={key} style={{ ...style.secondary, ...(tab === key ? { background: '#147D52', color: '#fff', borderColor: '#147D52' } : {}) }} onClick={() => {
-        if (key === 'novo' && !editing)
-          setForm(formInit());
-        setTab(key);
-      }}>{label}</button>)}</nav>
-    {error && <div role="alert" style={{ ...style.panel, borderColor: '#EF9A9A', color: '#A52626' }}>
-      {error}<button style={{ ...style.secondary, marginLeft: 12 }} onClick={() => setError('')}>Fechar</button>
-    </div>}
-    {loading ? <Empty>Carregando dados...</Empty> : <>
-      {tab === 'inicio' && <>
-        <div style={style.grid}>
-          <Stat label="Saldo bancário estimado" value={balance} hint="A partir do saldo-base e movimentações registradas" />
-          <Stat label="Contas em aberto até o fim do mês" value={sum(items.filter(x => isExpense(x) && !paid(x) && due(x) <= `${mes}-31`))} negative />
-          <Stat label="Disponível após contas" value={remaining} negative={remaining < 0} />
-          <Stat label="Vale-alimentação informado" value={settings.vale_saldo} hint="Saldo manual, não somado ao dinheiro" />
-        </div>
-        <div style={{ ...style.panel, marginTop: 14 }}>
-          <h2>Resumo de {mes}</h2>
-          <div style={style.grid}>
-            <Stat label="Despesas previstas" value={monthExpense} />
-            <Stat label="Despesas marcadas como pagas" value={monthPaid} />
-            <Stat label="Contas a pagar neste mês" value={sum(pendingThisMonth)} negative />
-            <Stat label="Receitas lançadas no mês" value={sum(incomes)} />
-          </div>
-        </div>
-        <div style={style.grid}>
-          <section style={style.panel}>
-            <h3>Contas atrasadas</h3>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#C43232' }}>{brl(sum(overdue))}</div>
-            <p style={{ fontSize: 12, color: '#667085' }}>{overdue.length} lançamentos vencidos e não pagos, inclusive de meses anteriores.</p>
-            <button style={style.button} onClick={() => setTab('dividas')}>Ver atrasos</button>
-          </section>
-          <section style={style.panel}>
-            <h3>Maiores categorias do mês</h3>{byCategory.slice(0, 6).map(x => <div key={x.cat} style={{ display: 'flex', justifyContent: 'space-between', margin: '8px 0', gap: 8 }}>
-              <span>{x.cat}</span>
-              <strong>{brl(x.value)}</strong>
-            </div>)}</section>
-        </div>
-      </>}
-      {tab === 'contas' && <section style={style.panel}>
-        <h2>Contas a pagar</h2>
-        <p style={{ color: '#667085', fontSize: 13 }}>Contas não pagas até o fim de {mes}, inclusive atrasos anteriores. Compras individuais do cartão aparecem na aba Cartão, para não duplicar a fatura.</p>
-        <div style={style.grid}>
-          <Stat label="Em aberto (sem compras do cartão)" value={sum(bills)} negative />
-          <Stat label="Vencidas (todas as fontes)" value={sum(overdue)} negative />
-        </div>
-        <div style={{ marginTop: 12, padding: 12, background: '#F0F7F3', borderRadius: 10 }}>
-          <strong>Fatura do cartão de {mes}: {brl(sum(cardMonth))}</strong>
-          <p style={{ fontSize: 12, margin: '5px 0' }}>A fatura fica separada dos boletos abaixo. Consulte e marque seu pagamento na aba Cartão; registre a saída bancária como Pagamento da fatura para conciliar o saldo.</p>
-          <button style={style.secondary} onClick={() => setTab('cartao')}>Ver fatura</button>
-        </div>
-        <div style={{ marginTop: 14 }}>
-          {table(bills.sort((a, b) => due(a).localeCompare(due(b))))}</div>
-      </section>}
-      {tab === 'debito' && <section style={style.panel}>
-        <h2>Pagos no débito / Pix / dinheiro</h2>
-        <p style={{ color: '#667085', fontSize: 13 }}>Somente despesas efetivamente pagas. Não inclui boletos pendentes nem compras do cartão. Transferências entre contas não são despesas.</p>
-        <Stat label="Total pago no mês" value={sum(debitMonth)} />
-        <div style={{ marginTop: 14 }}>
-          {table(debitMonth)}</div>
-      </section>}
-      {tab === 'cartao' && <section style={style.panel}>
-        <h2>Fatura do cartão — {mes}</h2>
-        <p style={{ color: '#667085', fontSize: 13 }}>Compras da tabela compartilhada, responsável Fernanda. Marcar as compras como pagas é um controle da fatura, não uma saída bancária. Para conciliar o saldo, registre uma única movimentação do tipo Pagamento da fatura.</p>
-        <div style={style.grid}>
-          <Stat label="Fatura conhecida" value={sum(cardMonth)} />
-          <Stat label="Compras ainda não marcadas como pagas" value={sum(cardMonth.filter(x => !paid(x)))} negative />
-        </div>
-        <button style={{ ...style.button, margin: '14px 0' }} onClick={toggleCard}>
-          {cardMonth.every(paid) ? 'Desmarcar fatura como paga' : 'Marcar fatura como paga'}</button>
-        {table(cardMonth)}</section>}
-      {tab === 'planejamento' && <>
-        <section style={style.panel}>
-          <h2>Projeção de parcelas e contas cadastradas</h2>
-          <p style={{ color: '#667085', fontSize: 13 }}>Inclui apenas lançamentos que já existem no banco. Não gera automaticamente despesas recorrentes que ainda não foram cadastradas.</p>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={style.table}>
-              <thead>
-                <tr>
-                  <th style={style.td}>Mês</th>
-                  <th style={style.td}>Contas e outras despesas</th>
-                  <th style={style.td}>Cartão</th>
-                  <th style={style.td}>Total previsto</th>
-                </tr>
-              </thead>
-              <tbody>{forecast.map(x => <tr key={x.mes}>
-                <td style={style.td}>{x.mes}</td>
-                <td style={style.td}>{brl(x.contas)}</td>
-                <td style={style.td}>{brl(x.cartao)}</td>
-                <td style={{ ...style.td, fontWeight: 800 }}>{brl(x.total)}</td>
-              </tr>)}</tbody>
-            </table>
-          </div>
-        </section>
-        <section style={style.panel}>
-          <h2>Limites por categoria</h2>
-          <div style={style.grid}>
-            {Object.entries(limitDraft).map(([cat, limit]) => {
-              const spent = sum(current.filter(x => isExpense(x) && x.categoria === cat));
-              const pct = limit > 0 ? spent / limit * 100 : 0;
-              return <div key={cat} style={{ padding: 12, border: '1px solid #EAECF0', borderRadius: 10 }}>
-                <strong>{cat}</strong>
-                <div style={{ fontSize: 13, marginTop: 5 }}>{brl(spent)} / {brl(limit)}</div>
-                <div style={{ height: 8, background: '#EAECF0', borderRadius: 8, overflow: 'hidden', margin: '8px 0' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: pct >= 100 ? '#C43232' : pct >= 70 ? '#E5A434' : '#168157' }} />
-                </div>
-                <input aria-label={`Limite ${cat}`} type="number" min="0" step="0.01" value={limit} style={style.input} onChange={e => setLimitDraft(p => ({ ...p, [cat]: e.target.value }))} />
-              </div>;
-            })}</div>
-          <button style={{ ...style.button, marginTop: 12 }} onClick={saveLimits} disabled={saving}>Salvar limites</button>
-        </section>
-      </>}
-      {tab === 'dividas' && <section style={style.panel}>
-        <h2>Contas vencidas e dívidas</h2>
-        <p style={{ color: '#667085', fontSize: 13 }}>Lista automática dos compromissos vencidos não pagos. Cadastre dívidas antigas como lançamentos com vencimento original; acordos devem ser cadastrados separadamente, evitando contar o valor original e o acordo como duas dívidas exigíveis.</p>
-        <Stat label="Atrasos identificados" value={sum(overdue)} negative />
-        <div style={{ marginTop: 14 }}>
-          {table(overdue.sort((a, b) => due(a).localeCompare(due(b))))}</div>
-      </section>}
-      {tab === 'lancamentos' && <section style={style.panel}>
-        <h2>Todos os lançamentos de {mes}</h2>
-        <div style={{ maxWidth: 270, marginBottom: 12 }}>
-          <select aria-label="Filtrar lançamentos" style={style.input} value={filter} onChange={e => setFilter(e.target.value)}>
-            <option value="todos">Todos</option>
-            <option value="pagar">Contas a pagar</option>
-            <option value="pagos">Pagos</option>
-            <option value="receitas">Receitas</option>
-            <option value="transferencias">Transferências</option>
-            <option value="cartao">Cartão</option>
-          </select>
-        </div>
-        {table(current.filter(x => filter === 'todos' || (filter === 'pagar' && isExpense(x) && !paid(x)) || (filter === 'pagos' && isExpense(x) && paid(x)) || (filter === 'receitas' && isIncome(x)) || (filter === 'transferencias' && isTransfer(x)) || (filter === 'cartao' && isCard(x))).sort((a, b) => due(b).localeCompare(due(a))))}</section>}
-      {tab === 'novo' && <section style={{ ...style.panel, maxWidth: 780 }}>
-        <h2>
-          {editing ? 'Editar lançamento' : 'Novo lançamento'}</h2>
-        <form onSubmit={save}>
-          <div style={style.grid}>
-            <Field label="Tipo de movimentação">
-              <select style={style.input} value={form.tipo_movimentacao} onChange={e => set('tipo_movimentacao', e.target.value)}>
-                <option value="despesa">Despesa / conta a pagar</option>
-                <option value="receita">Receita</option>
-                <option value="transferencia">Transferência entre contas</option>
-                <option value="pagamento_fatura">Pagamento da fatura (fluxo de caixa)</option>
-              </select>
-            </Field>
-            <Field label="Descrição">
-              <input style={style.input} required value={form.descricao} onChange={e => set('descricao', e.target.value)} />
-            </Field>
-            <Field label="Valor total (R$)">
-              <input style={style.input} required type="number" step="0.01" min="0.01" value={form.valor} onChange={e => set('valor', e.target.value)} />
-            </Field>
-            <Field label="Data da movimentação">
-              <input style={style.input} type="date" required value={form.data} onChange={e => set('data', e.target.value)} />
-            </Field>
-            <Field label="Vencimento">
-              <input style={style.input} type="date" required value={form.data_vencimento} onChange={e => set('data_vencimento', e.target.value)} />
-            </Field>
-            <Field label="Categoria (inclui Moto, Trabalho, Casa e Leticia)">
-              <select style={style.input} value={form.categoria} onChange={e => set('categoria', e.target.value)}>
-                {[...new Set([...CATS, ...items.map(x => x.categoria).filter(Boolean)])].map(c => <option key={c}>{c}</option>)}</select>
-            </Field>
-            <Field label="Forma de pagamento">
-              <select style={style.input} value={form.metodo_pagamento} onChange={e => set('metodo_pagamento', e.target.value)}>{METHODS.map(m => <option key={m}>{m}</option>)}</select>
-            </Field>
-            <Field label="Conta / origem">
-              <input style={style.input} value={form.conta} onChange={e => set('conta', e.target.value)} placeholder="Santander, Nubank, Vale..." />
-            </Field>
-            <Field label="Período">
-              <select style={style.input} value={form.periodo} onChange={e => set('periodo', e.target.value)}>{PERIODOS.map(p => <option key={p}>{p}</option>)}</select>
-            </Field>
-            {!editing && <Field label="Parcelas (1 = à vista)">
-              <input style={style.input} type="number" min="1" max="120" value={form.parcelas} onChange={e => set('parcelas', e.target.value)} />
-            </Field>}</div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 15 }}>
-            <input type="checkbox" checked={form.pago} onChange={e => set('pago', e.target.checked)} /> Já foi pago / recebido</label>
-          <Field label="Observações">
-            <textarea style={{ ...style.input, marginTop: 8 }} value={form.observacoes} onChange={e => set('observacoes', e.target.value)} />
-          </Field>
-          <div style={{ display: 'flex', gap: 8, marginTop: 15 }}>
-            <button style={style.button} type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar lançamento'}</button>
-            {editing && <button style={style.secondary} type="button" onClick={() => { setEditing(null); setForm(formInit()); setTab('lancamentos'); }}>Cancelar</button>}</div>
-        </form>
-      </section>}
-      {tab === 'ajustes' && <section style={{ ...style.panel, maxWidth: 750 }}>
-        <h2>Configuração de saldos e receitas</h2>
-        <p style={{ color: '#667085', fontSize: 13 }}>O saldo bancário é calculado a partir de um saldo-base informado por você. Configure uma data inicial e evite registrar novamente movimentações anteriores a essa data.</p>
-        <div style={style.grid}>
-          {[['saldo_inicial', 'Saldo bancário na data-base'], ['saldo_data', 'Data-base'], ['vale_saldo', 'Saldo atual do vale-alimentação'], ['receita_dia5', 'Receita prevista dia 5'], ['receita_dia20', 'Receita prevista dia 20'], ['vale_mensal', 'Vale previsto mensalmente']].map(([k, label]) => <Field key={k} label={label}>
-            <input style={style.input} type={k === 'saldo_data' ? 'date' : 'number'} step="0.01" value={settings[k] ?? ''} onChange={e => setSettings(p => ({ ...p, [k]: k === 'saldo_data' ? e.target.value : Number(e.target.value) }))} />
-          </Field>)}</div>
-        <button style={{ ...style.button, marginTop: 14 }} onClick={saveSettings} disabled={saving}>Salvar configurações</button>
-        <p style={{ color: '#667085', fontSize: 12 }}>Importante: receitas previstas não são adicionadas automaticamente ao saldo. Registre o recebimento real na aba Novo para evitar dupla contagem.</p>
-      </section>}
+      <div className="mf-grid2 equal"><section className="mf-panel"><div className="mf-section-head"><div><h2>Próximas contas do mês</h2><p className="mf-sub">O que ainda precisa da sua atenção</p></div><button className="mf-toplink" onClick={()=>go('contas')}>Ver todas →</button></div>{current.filter(x=>isExpense(x)&&!isCard(x)&&!paid(x)).sort((a,b)=>due(a).localeCompare(due(b))).slice(0,5).map(x=><div key={`${x.fonte}-${x.id}`} className="mf-legendline"><span><strong>{x.descricao}</strong><div className="mf-muted">Vence {dateBR(due(x))}</div></span><strong>{brl(x.valor)}</strong></div>)}{!monthNonCardPending&&<div className="mf-empty">Nenhuma conta pendente neste mês.</div>}</section><section className="mf-panel"><div className="mf-section-head"><div><h2>Maiores gastos</h2><p className="mf-sub">Categorias com maior participação</p></div><button className="mf-toplink" onClick={()=>go('planejamento')}>Planejamento →</button></div>{byCategory.slice(0,5).map((x,i)=><div className="mf-barline" key={x.cat}><div className="mf-barlabel"><span>{x.cat}</span><strong>{brl(x.value)}</strong></div><div className="mf-track"><div className="mf-fill" style={{width:`${byCategory[0]?.value?x.value/byCategory[0].value*100:0}%`,background:categoryColors[i]}}/></div></div>)}{!byCategory.length&&<div className="mf-empty">Sem despesas neste mês.</div>}</section></div>
     </>}
-  </div>;
+    {tab==='contas'&&<><div className="mf-section-head"><div><h2>Contas a pagar · {monthName}</h2><p className="mf-sub">Inclui pendências anteriores até o fim do mês selecionado. Não inclui compras individuais do cartão.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Pendências até este mês',sum(bills),'amber','Inclui contas atrasadas de outros meses')}{metric('Contas pendentes deste mês',monthNonCardPending,'blue')}</div><section className="mf-panel">{table([...bills].sort((a,b)=>due(a).localeCompare(due(b))))}</section></>}
+    {tab==='debito'&&<><div className="mf-section-head"><div><h2>Pagos no mês · {monthName}</h2><p className="mf-sub">Débito, Pix, dinheiro e vale-alimentação já marcados como pagos.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Pagamentos no débito e similares',sum(debitMonth),'green')}<div className="mf-metric blue"><div className="label">Quantidade de pagamentos</div><div className="value">{debitMonth.length}</div><div className="hint">Registros deste mês</div></div></div><section className="mf-panel">{table(debitMonth)}</section></>}
+    {tab==='cartao'&&<><div className="mf-section-head"><div><h2>Cartão de crédito · {monthName}</h2><p className="mf-sub">Compras atribuídas a Fernanda na tabela compartilhada.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Fatura do mês',cardTotal,'blue')}{metric('Compras não marcadas como pagas',sum(cardMonth.filter(x=>!paid(x))),'amber')}</div><section className="mf-panel"><div className="mf-info">Marcar as compras como pagas não reduz o saldo bancário. Registre o pagamento real da fatura apenas uma vez, como “Pagamento da fatura”.</div><button className="mf-btn" style={{marginBottom:15}} onClick={toggleCard}>{cardMonth.every(paid)?'Desmarcar fatura como paga':'Marcar fatura como paga'}</button>{table(cardMonth)}</section></>}
+    {tab==='planejamento'&&<><div className="mf-section-head"><div><h2>Planejamento financeiro</h2><p className="mf-sub">Previsão de cinco meses com base nas contas e parcelas cadastradas.</p></div></div><section className="mf-panel"><h2>Compromissos previstos</h2><p className="mf-sub">Somente valores já lançados; contas recorrentes futuras não cadastradas ficam fora da projeção.</p><div className="mf-forecast">{forecast.map(x=><div className="mf-forecastcol" key={x.mes}><strong>{brl(x.total)}</strong><div className="mf-forecastbar" style={{height:`${Math.max(4,forecast.some(z=>z.total>0)?x.total/Math.max(...forecast.map(z=>z.total))*125:4)}px`}}/><span>{new Date(Number(x.mes.slice(0,4)),Number(x.mes.slice(5,7))-1,1).toLocaleDateString('pt-BR',{month:'short'})}</span></div>)}</div><div className="mf-tablewrap"><table className="mf-table" style={{minWidth:520}}><thead><tr><th>Mês</th><th>Contas e despesas</th><th>Cartão</th><th>Compromissos</th></tr></thead><tbody>{forecast.map(x=><tr key={x.mes}><td>{x.mes}</td><td>{brl(x.contas)}</td><td>{brl(x.cartao)}</td><td className="mf-money">{brl(x.total)}</td></tr>)}</tbody></table></div></section>
+      <section className="mf-panel"><div className="mf-section-head"><div><h2>Orçamento por categoria</h2><p className="mf-sub">Compare os gastos do mês com os limites que você definiu.</p></div><button className="mf-btn secondary" onClick={()=>setShowLimits(v=>!v)}>{showLimits?'Ocultar edição':'Editar limites'}</button></div><div className="mf-limitgrid">{[...new Set([...CATS,...Object.keys(limitDraft),...current.map(x=>x.categoria).filter(Boolean)])].filter(cat=>Number(limitDraft[cat]||0)>0||sum(current.filter(x=>isExpense(x)&&x.categoria===cat))>0||showLimits).map(cat=>{const limit=Number(limitDraft[cat]||0),spent=sum(current.filter(x=>isExpense(x)&&x.categoria===cat)),pct=limit>0?spent/limit*100:0;return <div className="mf-limit" key={cat}><div className="top"><strong>{cat}</strong><span className={'mf-badge '+(limit>0&&spent>limit?'overdue':'paid')}>{limit>0?Math.round(pct)+'%':'Sem limite'}</span></div><div className="amount">{brl(spent)} de {limit>0?brl(limit):'limite não definido'}</div><div className="mf-track"><div className="mf-fill" style={{width:`${Math.min(100,pct)}%`,background:limit>0&&pct>=100?'#e27772':pct>=75?'#e9b054':'#1b9b78'}}/></div>{showLimits&&<div className="limitrow"><label>Limite R$</label><input className="mf-control" type="number" min="0" step="0.01" value={limitDraft[cat]??0} onChange={e=>setLimitDraft(p=>({...p,[cat]:e.target.value}))}/></div>}</div>})}</div>{showLimits&&<button className="mf-btn" style={{marginTop:16}} onClick={saveLimits} disabled={saving}>{saving?'Salvando...':'Salvar limites'}</button>}<p className="mf-note" style={{marginTop:14}}>Os gastos exibidos consideram lançamentos do mês, inclusive despesas fixas e compras no cartão classificadas na categoria. Ajuste os limites conforme o que deseja acompanhar.</p></section>
+    </>}
+    {tab==='dividas'&&<><div className="mf-section-head"><div><h2>Contas atrasadas</h2><p className="mf-sub">Compromissos vencidos e ainda não pagos, inclusive de meses anteriores.</p></div></div><section className="mf-panel"><div className="mf-info mf-warning">Esta aba mostra contas vencidas registradas no aplicativo. Não representa automaticamente o saldo de dívidas negociadas ou não cadastradas.</div>{table([...overdue].sort((a,b)=>due(a).localeCompare(due(b))))}</section></>}
+    {tab==='lancamentos'&&<section className="mf-panel"><div className="mf-section-head"><div><h2>Lançamentos de {monthName}</h2><p className="mf-sub">Consulte e atualize as movimentações deste mês.</p></div></div><div className="mf-inlinefilters"><select className="mf-control" value={filter} onChange={e=>setFilter(e.target.value)}><option value="todos">Todos os lançamentos</option><option value="pagar">Pendentes</option><option value="pagos">Pagos</option><option value="receitas">Receitas</option><option value="transferencias">Transferências</option><option value="cartao">Cartão</option></select><span className="mf-monthchip">{current.length} registros no mês</span></div>{table(current.filter(x=>filter==='todos'||filter==='pagar'&&isExpense(x)&&!paid(x)||filter==='pagos'&&isExpense(x)&&paid(x)||filter==='receitas'&&isIncome(x)||filter==='transferencias'&&isTransfer(x)||filter==='cartao'&&isCard(x)).sort((a,b)=>due(b).localeCompare(due(a))))}</section>}
+    {tab==='novo'&&<section className="mf-panel"><div className="mf-formhead"><div><h2>{editing?'Editar lançamento':'Novo lançamento'}</h2><p className="mf-sub">Preencha os dados abaixo. Os campos se adaptam ao tamanho da tela.</p></div><button className="mf-btn ghost" onClick={()=>go('lancamentos')}>Voltar</button></div><form onSubmit={save}><div className="mf-formsection">Informações principais</div><div className="mf-formgrid">{field('Tipo de movimentação',select('tipo_movimentacao',[['despesa','Despesa / conta a pagar'],['receita','Receita'],['transferencia','Transferência'],['pagamento_fatura','Pagamento da fatura']]))}{field('Descrição',input('descricao','text',{required:true,placeholder:'Ex.: Conta de energia'}))}{field('Valor total (R$)',input('valor','number',{required:true,min:'0.01',step:'0.01',placeholder:'0,00'}))}{field('Data do lançamento',input('data','date',{required:true}))}{field('Data de vencimento',input('data_vencimento','date',{required:true}))}{field('Categoria',select('categoria',[...new Set([...CATS,...items.map(x=>x.categoria).filter(Boolean)])]))}</div><div className="mf-formsection">Pagamento e organização</div><div className="mf-formgrid">{field('Forma de pagamento',select('metodo_pagamento',METHODS))}{field('Conta / origem',input('conta','text',{placeholder:'Ex.: Santander'}))}{field('Período',select('periodo',PERIODOS))}{!editing&&field('Número de parcelas',input('parcelas','number',{min:1,max:120}))}</div><div style={{marginTop:18}}><label className="mf-check"><input type="checkbox" checked={!!form.pago} onChange={e=>set('pago',e.target.checked)}/>{form.tipo_movimentacao==='receita'?'Já recebi':'Já foi pago'}</label></div><div style={{marginTop:20}}>{field('Observações',<textarea className="mf-control area" value={form.observacoes} onChange={e=>set('observacoes',e.target.value)} placeholder="Opcional"/>)}</div><div className="mf-formactions"><button className="mf-btn" type="submit" disabled={saving}>{saving?'Salvando...':editing?'Salvar alterações':'Salvar lançamento'}</button>{editing&&<button className="mf-btn ghost" type="button" onClick={()=>{setEditing(null);setForm(formInit());go('lancamentos')}}>Cancelar</button>}</div></form></section>}
+    {tab==='ajustes'&&<section className="mf-panel"><h2>Ajustes e saldos</h2><p className="mf-sub">Os saldos são opcionais. O painel principal sempre mostra apenas os valores do mês selecionado.</p><div className="mf-formgrid">{[['saldo_inicial','Saldo bancário na data-base'],['saldo_data','Data-base'],['vale_saldo','Saldo do vale-alimentação'],['receita_dia5','Receita prevista dia 5'],['receita_dia20','Receita prevista dia 20'],['vale_mensal','Vale previsto mensalmente']].map(([k,label])=><div className="mf-field" key={k}><span className="mf-fieldlabel">{label}</span><input className="mf-control" type={k==='saldo_data'?'date':'number'} step="0.01" value={settings[k]??''} onChange={e=>setSettings(p=>({...p,[k]:k==='saldo_data'?e.target.value:Number(e.target.value)}))}/></div>)}</div><div className="mf-formactions"><button className="mf-btn" onClick={saveSettings} disabled={saving}>Salvar ajustes</button></div><p className="mf-note">Receitas previstas não são lançadas automaticamente como dinheiro recebido. Cadastre os recebimentos reais para evitar contagem duplicada.</p></section>}
+    </>}
+  </main></div>;
 }
