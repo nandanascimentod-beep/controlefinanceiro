@@ -29,7 +29,9 @@ const isIncome = x => x.tipo_movimentacao === 'receita';
 const isExpense = x => !isTransfer(x) && !isIncome(x) && x.tipo_movimentacao !== 'pagamento_fatura';
 const due = x => x.data_vencimento || x.data || `${ym(x.mes_referente) || ym(today())}-01`;
 const paid = x => x.pago === true;
-const isDebitOrPix = x => !isCard(x) && isExpense(x) && ['debito', 'débito', 'pix'].includes(String(x.metodo_pagamento || '').trim().toLowerCase());
+// Normaliza maiúsculas, acentos e espaços, sem alterar os dados no Supabase.
+const normalizedMethod = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+const isDebitOrPix = x => !isCard(x) && isExpense(x) && ['debito', 'pix'].includes(normalizedMethod(x.metodo_pagamento));
 const isPaidDebitOrPix = x => isDebitOrPix(x) && paid(x);
 const isAccount = x => !isCard(x) && isExpense(x) && !isDebitOrPix(x);
 const isOverdue = x => isExpense(x) && !paid(x) && due(x) < today();
@@ -77,9 +79,9 @@ export default function App() {
         setError('Os lançamentos carregaram, mas Ajustes/Limites exigem políticas RLS no Supabase: ' + [c.error, d.error].filter(Boolean).map(x => x.message).join(' / '));
       // Preserva a mesma seleção de registros usada no aplicativo original.
       // Lançamentos novos criados na versão atual têm data_vencimento preenchida.
-      const legacyMethods=['Outros','Pix','PIX','pix','debito','Debito','Débito','débito'];
+      const legacyMethods=['outros','pix','debito'];
       const personal = (a.data || []).filter(x =>
-        legacyMethods.includes(x.metodo_pagamento) ||
+        legacyMethods.includes(normalizedMethod(x.metodo_pagamento)) ||
         (x.data_vencimento && x.metodo_pagamento !== 'Cartão de Crédito')
       ).map(x => ({ ...x, fonte: 'transacoes', tipo_movimentacao: x.tipo_movimentacao || 'despesa' }));
       const card = (b.data || []).map(x => ({ ...x, fonte: 'cartao', tipo_movimentacao: 'despesa', metodo_pagamento: 'Cartão de Crédito', data_vencimento: x.data_vencimento || null }));
@@ -100,7 +102,8 @@ export default function App() {
   const current = useMemo(() => items.filter(x => inMonth(x, mes)), [items, mes]);
   const bills = useMemo(() => items.filter(x => isAccount(x) && inMonth(x,mes)), [items, mes]);
   const overdue = useMemo(() => items.filter(x => !isCard(x) && isOverdue(x)), [items]);
-  const cardMonth = current.filter(isCard), debitMonth = current.filter(isPaidDebitOrPix);
+  const cardMonth = current.filter(isCard), debitMonth = current.filter(isDebitOrPix);
+  const paidDebitMonth = debitMonth.filter(paid);
   const toPay = current.filter(x => isExpense(x) && !paid(x));
   const expenses = current.filter(isExpense);
   const incomes = current.filter(isIncome);
@@ -129,7 +132,7 @@ export default function App() {
   const otherMonth = current.filter(x=>isExpense(x)&&!isCard(x));
   const accountsMonth = current.filter(isAccount);
   const totalAccounts = sum(accountsMonth);
-  const totalDebit = sum(debitMonth);
+  const totalDebit = sum(paidDebitMonth);
   // A soma não inclui transferências internas nem pagamentos da fatura já contada no cartão.
   const totalMonthlyExpenses = num(cardTotal + totalAccounts + totalDebit);
   const totalMonthlyIncome = sum(incomes);
@@ -151,7 +154,7 @@ export default function App() {
   const applyFilters = rows=>rows.filter(x=>
     (!fCategoria||(x.categoria||'Sem categoria')===fCategoria)&&
     (!fPeriodo||(isCard(x)?'1º Período':(x.periodo||'1º Período'))===fPeriodo)&&
-    (!fPagamento||(fPagamento==='cartao'?isCard(x):fPagamento==='outros'?!isCard(x):(x.metodo_pagamento||'').toLowerCase()===fPagamento.toLowerCase()))&&
+    (!fPagamento||(fPagamento==='cartao'?isCard(x):fPagamento==='outros'?!isCard(x):normalizedMethod(x.metodo_pagamento)===normalizedMethod(fPagamento)))&&
     (!fBusca||String(x.descricao||'').toLowerCase().includes(fBusca.toLowerCase()))&&
     (!fInicio||String(x.data||'')>=fInicio)&&(!fFim||String(x.data||'')<=fFim)&&
     (filter==='todos'||filter==='pagar'&&isExpense(x)&&!paid(x)&&!isOverdue(x)||filter==='atrasados'&&isOverdue(x)||filter==='pagos'&&isExpense(x)&&paid(x)||filter==='receitas'&&isIncome(x)||filter==='transferencias'&&isTransfer(x)||filter==='cartao'&&isCard(x)||filter==='outros'&&!isCard(x))
@@ -353,7 +356,7 @@ const CSS = `
 
     </>}
     {tab==='contas'&&<><div className="mf-section-head"><div><h2>Contas · {monthName}</h2><p className="mf-sub">Contas do mês, pagas ou a vencer, sem cartão, débito ou Pix.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Total de contas',totalAccounts,'amber')}{metric('Contas pagas',sum(accountsMonth.filter(paid)),'green')}</div><section className="mf-panel">{table([...accountsMonth].sort((a,b)=>due(a).localeCompare(due(b))))}</section></>}
-    {tab==='debito'&&<><div className="mf-section-head"><div><h2>Transferências · {monthName}</h2><p className="mf-sub">Somente pagamentos já realizados no débito ou Pix.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Total débito e Pix',totalDebit,'green')}<div className="mf-metric blue"><div className="label">Quantidade de pagamentos</div><div className="value">{debitMonth.length}</div></div></div><section className="mf-panel">{table(debitMonth)}</section></>}
+    {tab==='debito'&&<><div className="mf-section-head"><div><h2>Transferências · {monthName}</h2><p className="mf-sub">Todos os registros de débito e Pix do mês, com indicação de pago ou não pago. O total considera apenas os pagos.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Débito e Pix pagos',totalDebit,'green')}<div className="mf-metric blue"><div className="label">Registros de Débito e Pix</div><div className="value">{debitMonth.length}</div></div></div><section className="mf-panel">{table(debitMonth)}</section></>}
     {tab==='cartao'&&<><div className="mf-section-head"><div><h2>Cartão de crédito · {monthName}</h2><p className="mf-sub">Compras de Fernanda na tabela compartilhada; valores originais preservados.</p></div></div><div className="mf-metrics" style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{metric('Fatura do mês',cardTotal,'blue')}{metric('Compras não marcadas como pagas',sum(cardMonth.filter(x=>!paid(x))),'amber')}</div><section className="mf-panel"><div className="mf-info">Marcar as compras como pagas não reduz o saldo bancário. Registre o pagamento real da fatura apenas uma vez, como “Pagamento da fatura”.</div><button className="mf-btn" style={{marginBottom:15}} onClick={toggleCard}>{cardMonth.every(paid)?'Desmarcar fatura como paga':'Marcar fatura como paga'}</button>{table(cardMonth)}{oldUnpaidCard.length>0&&<div className="mf-info mf-warning" style={{marginTop:16}}>Há {oldUnpaidCard.length} compras de cartão anteriores a {mes} marcadas como não pagas no banco. Se você confirmou que todas estão quitadas, pode corrigir o status sem alterar os valores. <button className="mf-btn small secondary" style={{marginLeft:12}} disabled={saving} onClick={settlePastCards}>Marcar cartões anteriores como pagos</button></div>}</section></>}
     {tab==='planejamento'&&<><div className="mf-section-head"><div><h2>Planejamento financeiro</h2><p className="mf-sub">Previsão de cinco meses com base nas contas e parcelas cadastradas.</p></div></div><section className="mf-panel"><h2>Compromissos previstos</h2><p className="mf-sub">Somente valores já lançados; contas recorrentes futuras não cadastradas ficam fora da projeção.</p><div className="mf-forecast">{forecast.map(x=><div className="mf-forecastcol" key={x.mes}><strong>{brl(x.total)}</strong><div className="mf-forecastbar" style={{height:`${Math.max(4,forecast.some(z=>z.total>0)?x.total/Math.max(...forecast.map(z=>z.total))*125:4)}px`}}/><span>{new Date(Number(x.mes.slice(0,4)),Number(x.mes.slice(5,7))-1,1).toLocaleDateString('pt-BR',{month:'short'})}</span></div>)}</div><div className="mf-tablewrap"><table className="mf-table" style={{minWidth:520}}><thead><tr><th>Mês</th><th>Contas e despesas</th><th>Cartão</th><th>Compromissos</th></tr></thead><tbody>{forecast.map(x=><tr key={x.mes}><td>{x.mes}</td><td>{brl(x.contas)}</td><td>{brl(x.cartao)}</td><td className="mf-money">{brl(x.total)}</td></tr>)}</tbody></table></div></section>
       <section className="mf-panel"><div className="mf-section-head"><div><h2>Orçamento por categoria</h2><p className="mf-sub">Compare os gastos do mês com os limites que você definiu.</p></div><button className="mf-btn secondary" onClick={()=>setShowLimits(v=>!v)}>{showLimits?'Ocultar edição':'Editar limites'}</button></div><div className="mf-limitgrid">{[...new Set([...CATS,...Object.keys(limitDraft),...current.map(x=>x.categoria).filter(Boolean)])].filter(cat=>Number(limitDraft[cat]||0)>0||sum(current.filter(x=>isExpense(x)&&x.categoria===cat))>0||showLimits).map(cat=>{const limit=Number(limitDraft[cat]||0),spent=sum(current.filter(x=>isExpense(x)&&x.categoria===cat)),pct=limit>0?spent/limit*100:0;return <div className="mf-limit" key={cat}><div className="top"><strong>{cat}</strong><span className={'mf-badge '+(limit>0&&spent>limit?'overdue':'paid')}>{limit>0?Math.round(pct)+'%':'Sem limite'}</span></div><div className="amount">{brl(spent)} de {limit>0?brl(limit):'limite não definido'}</div><div className="mf-track"><div className="mf-fill" style={{width:`${Math.min(100,pct)}%`,background:limit>0&&pct>=100?'#e27772':pct>=75?'#e9b054':'#1b9b78'}}/></div>{showLimits&&<div className="limitrow"><label>Limite R$</label><input className="mf-control" type="number" min="0" step="0.01" value={limitDraft[cat]??0} onChange={e=>setLimitDraft(p=>({...p,[cat]:e.target.value}))}/></div>}</div>})}</div>{showLimits&&<button className="mf-btn" style={{marginTop:16}} onClick={saveLimits} disabled={saving}>{saving?'Salvando...':'Salvar limites'}</button>}<p className="mf-note" style={{marginTop:14}}>Os gastos exibidos consideram lançamentos do mês, inclusive despesas fixas e compras no cartão classificadas na categoria. Ajuste os limites conforme o que deseja acompanhar.</p></section>
