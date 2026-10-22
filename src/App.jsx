@@ -24,14 +24,16 @@ const sum = xs => num(xs.reduce((a, x) => a + Number(x.valor || 0), 0));
 const addMonths = (s, n) => { const [y, m, d] = s.split('-').map(Number); const date = new Date(Date.UTC(y, m - 1 + n, 1)); const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate(); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`; };
 const formInit = () => ({ tipo_movimentacao: 'despesa', descricao: '', valor: '', data: today(), data_vencimento: today(), categoria: 'Outros', metodo_pagamento: 'Boleto', periodo: '1º Período', conta: 'Santander', pago: false, parcelas: 1, observacoes: '' });
 const isCard = x => x.fonte === 'cartao';
-const isTransfer = x => x.tipo_movimentacao === 'transferencia';
+// Débito e Pix são pagamentos de despesas, mesmo quando registros antigos
+// foram classificados com tipo_movimentacao = 'transferencia'.
+const normalizedMethod = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+const hasDebitOrPixMethod = x => ['debito', 'pix'].includes(normalizedMethod(x.metodo_pagamento));
+const isTransfer = x => x.tipo_movimentacao === 'transferencia' && !hasDebitOrPixMethod(x);
 const isIncome = x => x.tipo_movimentacao === 'receita';
 const isExpense = x => !isTransfer(x) && !isIncome(x) && x.tipo_movimentacao !== 'pagamento_fatura';
 const due = x => x.data_vencimento || x.data || `${ym(x.mes_referente) || ym(today())}-01`;
 const paid = x => x.pago === true;
-// Normaliza maiúsculas, acentos e espaços, sem alterar os dados no Supabase.
-const normalizedMethod = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-const isDebitOrPix = x => !isCard(x) && isExpense(x) && ['debito', 'pix'].includes(normalizedMethod(x.metodo_pagamento));
+const isDebitOrPix = x => !isCard(x) && isExpense(x) && hasDebitOrPixMethod(x);
 const isPaidDebitOrPix = x => isDebitOrPix(x) && paid(x);
 const isAccount = x => !isCard(x) && isExpense(x) && !isDebitOrPix(x);
 const isOverdue = x => isExpense(x) && !paid(x) && due(x) < today();
